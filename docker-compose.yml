@@ -1,0 +1,18 @@
+services:
+  emporio:
+    build: .
+    environment:
+      EMPORIO_ENV: development
+      EMPORIO_PRINCIPAL_HMAC_SECRET: development-only-change-me
+      EMPORIO_DB_PATH: /data/emporio.db
+    volumes:
+      - emporio-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-m", "emporio.runtime", "--check"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  emporio-data:
+
