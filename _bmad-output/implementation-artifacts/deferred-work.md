@@ -30,3 +30,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-1-check-authorized-order-status.md`
   summary: Introduce immutable version IDs and a transaction-scoped read spanning order, items, and snapshot metadata.
   evidence: P0 rejects mixed catalog/order refreshes and keeps the read path bounded, but a concurrent replacement can still require a stronger versioned snapshot contract before production use.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-add-optional-external-integrations.md`
+  summary: Certify live Correios and Meta credentials/endpoints in an integration environment and expose production transports.
+  evidence: Offline fake-provider contracts and secure configuration are implemented; real credentials and provider certification were intentionally not required for P0.

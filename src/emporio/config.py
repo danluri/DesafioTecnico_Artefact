@@ -3,11 +3,32 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_DB_PATH = Path("data/emporio.db")
 DEVELOPMENT_PRINCIPAL_HMAC_SECRET = "development-only-change-me"
 MINIMUM_PRINCIPAL_HMAC_SECRET_LENGTH = 32
+
+
+@dataclass(frozen=True, slots=True)
+class OptionalIntegrationConfig:
+    market_enabled: bool = False
+    mcp_enabled: bool = False
+
+    @classmethod
+    def from_env(cls) -> "OptionalIntegrationConfig":
+        def flag(name: str) -> bool:
+            return os.getenv(name, "false").strip().lower() in {"1", "true", "yes", "on"}
+        return cls(flag("EMPORIO_MARKET_ENABLED"), flag("EMPORIO_MCP_ENABLED"))
+
+
+class IntegrationFactory:
+    """Explicit seam for optional adapters; credentials are never required by P0."""
+
+    @staticmethod
+    def config() -> OptionalIntegrationConfig:
+        return OptionalIntegrationConfig.from_env()
 
 
 def database_path(explicit: str | Path | None = None) -> Path:

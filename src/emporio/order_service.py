@@ -28,6 +28,14 @@ class OrderService:
     def safe_message() -> str:
         return SAFE_ORDER_UNAVAILABLE
 
+    def get_tracking_code(
+        self, order_reference: str | int | None, principal: AuthorizedPrincipal | None
+    ) -> str | None:
+        order_id = self._parse_reference(order_reference)
+        if order_id is None or not isinstance(principal, AuthorizedPrincipal):
+            return None
+        return self._repository.find_owned_tracking_code(order_id, principal)
+
     @staticmethod
     def _parse_reference(reference: str | int | None) -> int | None:
         if isinstance(reference, bool):

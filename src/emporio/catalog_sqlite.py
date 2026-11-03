@@ -502,6 +502,17 @@ class SQLiteCatalogRepository:
             snapshot=self.order_snapshot_metadata(),
         )
 
+    def find_owned_tracking_code(
+        self, order_id: int, principal: AuthorizedPrincipal
+    ) -> str | None:
+        if not isinstance(principal, AuthorizedPrincipal):
+            return None
+        row = self._connection.execute(
+            "SELECT tracking_code FROM orders WHERE order_id = ? AND customer_id = ?",
+            (order_id, principal.customer_id),
+        ).fetchone()
+        return (row["tracking_code"] or None) if row is not None else None
+
     def _metadata(self) -> SnapshotMetadata:
         row = self._connection.execute("SELECT data_as_of FROM catalog_metadata").fetchone()
         if row is None:

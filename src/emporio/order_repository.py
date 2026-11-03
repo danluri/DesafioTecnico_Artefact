@@ -16,3 +16,8 @@ class OrderRepository(Protocol):
 
     def order_snapshot_metadata(self) -> SnapshotMetadata:
         """Return the operational snapshot provenance."""
+
+    def find_owned_tracking_code(
+        self, order_id: int, principal: AuthorizedPrincipal
+    ) -> str | None:
+        """Return a tracking code only after ownership succeeds."""

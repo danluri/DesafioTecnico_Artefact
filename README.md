@@ -70,9 +70,25 @@ populated local package/build cache; the offline pytest suite does not.
 Provider modes are explicit. `EMPORIO_LLM_PROVIDER=fake` is the default and is the only
 required mode. `EMPORIO_LLM_PROVIDER=local-llama` is opt-in and requires a reachable
 Ollama-compatible endpoint; its contract test remains skipped unless
-`EMPORIO_LLAMA_BASE_URL` is set. WhatsApp, market comparison, and MCP are optional and
-are not prerequisites for P0 verification. The runtime readiness command is not an
+`EMPORIO_LLAMA_BASE_URL` is set. WhatsApp is the primary optional remote channel and routes
+normalized webhooks through `ConversationService`; configure `EMPORIO_WHATSAPP_ENABLED`,
+`EMPORIO_WHATSAPP_VERIFY_TOKEN`, `EMPORIO_WHATSAPP_ACCESS_TOKEN`,
+`EMPORIO_WHATSAPP_PHONE_NUMBER_ID`, and `EMPORIO_WHATSAPP_API_BASE_URL`. Real Meta
+delivery is not claimed by the offline suite. Market comparison and MCP are optional and
+default off (`EMPORIO_MARKET_ENABLED=false`, `EMPORIO_MCP_ENABLED=false`) and are not
+prerequisites for P0 verification. Enabled WhatsApp webhooks require both
+`EMPORIO_WHATSAPP_APP_SECRET` and a valid `X-Hub-Signature-256`; set
+`EMPORIO_WHATSAPP_IDEMPOTENCY_DB` to a durable SQLite path for restart-safe deduplication.
+The runtime readiness command is not an
 interactive chat endpoint.
+
+Correios live tracking is an optional, authorized supplement to the order snapshot. Configure
+`EMPORIO_CORREIOS_ENABLED`, `EMPORIO_CORREIOS_BASE_URL`, `EMPORIO_CORREIOS_TOKEN`, and
+`EMPORIO_CORREIOS_TIMEOUT`. Only the official homologation and production hosts
+(`apihom.correios.com.br` and `api.correios.com.br`, configurable as explicit host values)
+are accepted over HTTPS. The adapter calls `/srorastro/v1/objetos/{codigoObjeto}?resultado=T`
+with Bearer authentication and accepts the documented `quantidade`/`objetos`/`eventos`
+envelope; provider restrictions or outages leave the authorized snapshot status available.
 
 To verify named-volume persistence without touching unrelated Docker resources, use the
 unique project name above:

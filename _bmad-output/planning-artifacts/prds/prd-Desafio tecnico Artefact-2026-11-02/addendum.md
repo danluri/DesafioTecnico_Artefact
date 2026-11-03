@@ -24,6 +24,7 @@ The package includes:
 4. Treat CLI/API as the P0 validation surfaces; WhatsApp is the primary remote-channel adapter over the same ConversationService, with real delivery isolated behind configuration and credentials. Reserve documented environment variables for the webhook verify token, access token, phone-number ID, API base URL, and feature flag.
 5. Keep Market Comparison and MCP as optional adapters with feature flags, provenance, mocks, and no duplicated business rules.
 6. Use a fake LLM and local fixtures to make the basic test suite independent of network credentials.
+7. The store policy requires delivery tracking through the Correios API when live tracking is offered. This remains an optional P1 adapter: configure endpoint/credentials through environment variables, preserve server-side order authorization, never expose tracking data to an unauthorized customer, and keep snapshot/order-status behavior available when Correios is unavailable.
 7. Keep Ponytail outside runtime, package dependencies, and CI requirements.
 
 ## Rejected or deferred alternatives

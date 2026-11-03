@@ -6,6 +6,24 @@ services:
       EMPORIO_PRINCIPAL_HMAC_SECRET: development-only-change-me
       EMPORIO_DB_PATH: /data/emporio.db
       EMPORIO_LLM_PROVIDER: fake
+      EMPORIO_MARKET_ENABLED: "false"
+      EMPORIO_MCP_ENABLED: "false"
+      EMPORIO_WHATSAPP_ENABLED: "false"
+      EMPORIO_CORREIOS_ENABLED: "false"
+      # Optional WhatsApp primary remote channel; leave unset for offline P0.
+      # EMPORIO_WHATSAPP_VERIFY_TOKEN: set-out-of-band
+      # EMPORIO_WHATSAPP_ACCESS_TOKEN: set-out-of-band
+      # EMPORIO_WHATSAPP_PHONE_NUMBER_ID: set-out-of-band
+      # EMPORIO_WHATSAPP_APP_SECRET: set-out-of-band
+      # EMPORIO_WHATSAPP_IDEMPOTENCY_DB: /data/whatsapp-events.db
+      # EMPORIO_WHATSAPP_API_BASE_URL: https://graph.facebook.com
+      # Optional Correios Rastro; use the official deployment base URL.
+      # EMPORIO_CORREIOS_ENABLED: "true"
+      # EMPORIO_CORREIOS_BASE_URL: https://apihom.correios.com.br
+      # EMPORIO_CORREIOS_HOMOLOG_HOST: apihom.correios.com.br
+      # EMPORIO_CORREIOS_PRODUCTION_HOST: api.correios.com.br
+      # EMPORIO_CORREIOS_TOKEN: set-out-of-band
+      # EMPORIO_CORREIOS_TIMEOUT: "5"
       # Optional local Llama example; uncomment and set the model to enable it.
       # EMPORIO_LLAMA_BASE_URL: http://host.docker.internal:11434
       # EMPORIO_LLAMA_MODEL: llama3.2
