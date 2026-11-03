@@ -1,0 +1,20 @@
+# Deferred Work
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-answer-store-and-policy-questions.md`
+  summary: Evaluate whether lexical retrieval should require stronger evidence than one shared term.
+  evidence: A generic one-term query can match a passage, but the approved intent does not define a multi-term threshold; representative query evaluation is needed before changing retrieval semantics.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-answer-store-and-policy-questions.md`
+  summary: Add section-level segmentation for PDF pages containing multiple numbered sections.
+  evidence: The adapter currently assigns the first detected section to a page; the supplied source shape and a failing provenance example were not established.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-answer-store-and-policy-questions.md`
+  summary: Improve extraction handling for embedded PDF font encodings.
+  evidence: The local challenge PDF yields mojibake from the extraction library; the issue is source encoding-specific and needs a parser or source replacement decision.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-answer-store-and-policy-questions.md`
+  summary: Expand injection sanitization and add inline-instruction fixtures.
+  evidence: Review identified untested inline and Portuguese variants, but no reachable behavior change was demonstrated beyond the covered line-oriented fixture.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-answer-store-and-policy-questions.md`
+  summary: Evaluate retrieval and ambiguity behavior beyond the bounded top-five result set.
+  evidence: Conflicts beyond five passages and alternate phone formats were not demonstrated in the supplied policy source or acceptance examples.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-answer-store-and-policy-questions.md`
+  summary: Add query-specific CLI messaging for invalid questions.
+  evidence: The safe CLI error path currently uses source-failure wording for all PolicyError values; the story requires safe handling but does not prescribe distinct copy.
