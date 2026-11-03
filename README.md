@@ -45,7 +45,7 @@ provider is required. The base image does not install a heavyweight vector datab
 
 ## Docker
 
-Run `docker compose up --build`. This is a storage-ready P0 container: it initializes SQLite at `/data/emporio.db`, wires `LLMFactory`, `ToolRegistry`, `SessionService`, and `ConversationService`, runs an offline assistant readiness conversation, reports `READY`, and remains running with the named `emporio-data` volume mounted. There is no HTTP or CLI conversation endpoint yet: the readiness conversation proves wiring and storage only; it is not an interactive assistant interface. The default principal-binding HMAC secret is development-only; set `EMPORIO_PRINCIPAL_HMAC_SECRET` to an explicit deployment secret.
+Run `docker compose up --build`. This is a storage-ready P0 container: it initializes SQLite at `/data/emporio.db`, wires `LLMFactory`, `ToolRegistry`, `SessionService`, and `ConversationService`, runs an offline assistant readiness conversation, reports `READY`, and remains running with the named `emporio-data` volume mounted. The interactive HTTP console is development-only and requires the explicit command below. The default principal-binding HMAC secret is development-only; set `EMPORIO_PRINCIPAL_HMAC_SECRET` to an explicit deployment secret.
 
 For destructive volume verification, use a unique compose project name so an existing
 project volume is not selected accidentally:
@@ -109,6 +109,39 @@ prerequisites for P0 verification. Enabled WhatsApp webhooks require both
 `EMPORIO_WHATSAPP_IDEMPOTENCY_DB` to a durable SQLite path for restart-safe deduplication.
 The runtime readiness command is not an
 interactive chat endpoint.
+
+### Local development console
+
+The browser console is disabled by default. To run it outside Docker with FakeLLM:
+
+```powershell
+$env:EMPORIO_DEV_CONSOLE_ENABLED = "true"
+$env:EMPORIO_DEV_CONSOLE_PORT = "8080"
+python -m emporio.runtime --dev-console
+```
+
+Open `http://127.0.0.1:8080`. Type a message and send it. The page keeps the returned
+session identifier, shows the response/provider/outcome, and lets you reuse a message id to
+observe duplicate suppression. The endpoint is `POST /api/messages`; health is `GET /health`.
+
+To run the same console in Docker, expose the port only for this development command:
+
+```powershell
+docker compose run --rm -p 127.0.0.1:8080:8080 `
+  -e EMPORIO_DEV_CONSOLE_ENABLED=true `
+  -e EMPORIO_DEV_CONSOLE_PORT=8080 `
+  emporio python -m emporio.runtime --dev-console
+```
+
+This console uses the synthetic WhatsApp signature and the same `ConversationService`, LLM,
+tools, session SQLite database, and deduplication path. It never calls Meta or sends a real
+WhatsApp message. To use local Llama in Docker, add these overrides to the command:
+
+```powershell
+  -e EMPORIO_LLM_PROVIDER=local-llama `
+  -e EMPORIO_LLAMA_BASE_URL=http://host.docker.internal:11434 `
+  -e EMPORIO_LLAMA_MODEL=llama3.2
+```
 
 Correios and WhatsApp have explicit local simulators for development and tests. The
 simulators generate deterministic tracking results and signed WhatsApp-shaped webhooks,

@@ -8,6 +8,7 @@ import time
 
 from .config import database_path
 from .conversation import ConversationService
+from .dev_console import DevConsoleApplication, serve
 from .llm import LLMFactory
 from .session import utc_now
 from .session_service import SessionService
@@ -18,6 +19,9 @@ from .tools import ToolRegistry
 def main() -> None:
     parser = argparse.ArgumentParser(description="Emporio storage-ready runtime")
     parser.add_argument("--check", action="store_true", help="initialize SQLite and exit")
+    parser.add_argument(
+        "--dev-console", action="store_true", help="start the localhost development console"
+    )
     args = parser.parse_args()
     repository = SQLiteSessionRepository.connect(database_path())
     repository.purge_expired(utc_now())
@@ -25,15 +29,25 @@ def main() -> None:
     llm = LLMFactory.create()
     tools = ToolRegistry()
     assistant = ConversationService(sessions, llm, tools)
-    smoke = assistant.respond("runtime readiness")
     print(f"READY emporio storage db={database_path()}", flush=True)
+    if args.check:
+        smoke = assistant.respond("runtime readiness")
+        print(
+            f"READY emporio assistant provider={llm.provider} session={smoke.session_id} "
+            f"persistence={smoke.persistence.value}",
+            flush=True,
+        )
+        return
+    if args.dev_console:
+        print(f"READY emporio dev-console provider={llm.provider}", flush=True)
+        serve(DevConsoleApplication(assistant))
+        return
+    smoke = assistant.respond("runtime readiness")
     print(
         f"READY emporio assistant provider={llm.provider} session={smoke.session_id} "
         f"persistence={smoke.persistence.value}",
         flush=True,
     )
-    if args.check:
-        return
     running = True
 
     def stop(*_signals: int) -> None:

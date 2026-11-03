@@ -10,6 +10,9 @@ services:
       EMPORIO_MCP_ENABLED: "false"
       EMPORIO_WHATSAPP_ENABLED: "false"
       EMPORIO_CORREIOS_ENABLED: "false"
+      # Development console is disabled unless both this flag and --dev-console are used.
+      # EMPORIO_DEV_CONSOLE_ENABLED: "true"
+      # EMPORIO_DEV_CONSOLE_PORT: "8080"
       # Optional local semantic policy retrieval; lexical retrieval remains the default.
       # EMPORIO_POLICY_SEMANTIC_ENABLED: "true"
       # EMPORIO_POLICY_EMBEDDING_BASE_URL: http://host.docker.internal:11434
