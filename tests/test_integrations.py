@@ -5,6 +5,7 @@ import json
 import threading
 from datetime import date
 from decimal import Decimal
+from urllib.error import URLError
 
 import pytest
 
@@ -19,6 +20,41 @@ from emporio.mcp import MCPAdapter
 from emporio.order import AuthorizedPrincipal
 from emporio.tools import ToolRegistry, ToolSpec
 from emporio.whatsapp import WhatsAppConfig, WhatsAppVerificationError, WhatsAppWebhookAdapter
+
+
+def correios_payload(
+    code="AB123456789BR",
+    status="Objeto em transito",
+    observed_at="2026-11-03T12:00:00Z",
+    message=None,
+):
+    """Generate an official-shaped Rastro response without live credentials."""
+    event = {
+        "codigo": "BDE",
+        "tipo": "BDE",
+        "dtHrCriado": observed_at,
+        "descricao": status,
+        "unidade": {"codSro": "12345678", "endereco": {"cidade": "Sao Paulo", "uf": "SP"}},
+    }
+    if message is not None:
+        event["mensagem"] = message
+    return {
+        "versao": "1.8.7",
+        "quantidade": 1,
+        "objetos": [{"codObjeto": code, "mensagem": "", "eventos": [event]}],
+    }
+
+
+class MockCorreiosResponse:
+    status = 200
+    headers = type("Headers", (), {"get_content_type": lambda self: "application/json"})()
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self): return self
+    def __exit__(self, *_): return False
+    def read(self): return json.dumps(self.payload, ensure_ascii=False).encode("utf-8")
 
 
 def webhook(message_id="wamid.test"):
@@ -177,3 +213,102 @@ def test_mcp_only_dispatches_allowlisted_existing_tool():
     adapter = MCPAdapter(tools)
     assert adapter.call("product_detail", {"reference": "7"}).value == {"reference": "7"}
     assert adapter.call("shell_exec", {"command": "whoami"}).error == "unsupported operation"
+
+
+def test_correios_configuration_reads_credentials_only_from_environment(monkeypatch):
+    monkeypatch.setenv("EMPORIO_CORREIOS_ENABLED", "true")
+    monkeypatch.setenv("EMPORIO_CORREIOS_BASE_URL", "https://apihom.correios.com.br")
+    monkeypatch.setenv("EMPORIO_CORREIOS_TOKEN", "synthetic-token")
+    monkeypatch.setenv("EMPORIO_CORREIOS_TIMEOUT", "3.5")
+    config = CorreiosConfig.from_env()
+    assert config.enabled and config.timeout == 3.5
+    assert config.token == "synthetic-token"
+    assert "synthetic-token" not in repr(config)
+
+
+def test_correios_generated_payload_is_normalized_and_sent_with_bearer(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured.update(url=request.full_url, auth=request.get_header("Authorization"), timeout=timeout)
+        return MockCorreiosResponse(correios_payload(message="Acompanhe pelo canal oficial."))
+
+    monkeypatch.setattr("emporio.correios.urlopen", fake_urlopen)
+    result = CorreiosHttpAdapter(
+        CorreiosConfig(True, "https://apihom.correios.com.br", "secret", 2)
+    ).track("AB123456789BR")
+    assert result.status == "Objeto em transito"
+    assert result.message == "Acompanhe pelo canal oficial."
+    assert result.source == "Correios Rastro"
+    assert captured == {
+        "url": "https://apihom.correios.com.br/srorastro/v1/objetos/AB123456789BR?resultado=T",
+        "auth": "Bearer secret",
+        "timeout": 2,
+    }
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 429, 500])
+def test_correios_mocked_http_failures_are_unavailable(monkeypatch, status):
+    def fake_urlopen(request, timeout):
+        response = MockCorreiosResponse(correios_payload())
+        response.status = status
+        return response
+
+    monkeypatch.setattr("emporio.correios.urlopen", fake_urlopen)
+    adapter = CorreiosHttpAdapter(
+        CorreiosConfig(True, "https://apihom.correios.com.br", "secret")
+    )
+    with pytest.raises(CorreiosUnavailable, match="unusable response"):
+        adapter.track("AB123456789BR")
+
+
+def test_correios_missing_credential_does_not_call_provider(monkeypatch):
+    called = False
+
+    def unexpected_urlopen(request, timeout):
+        nonlocal called
+        called = True
+        raise AssertionError("live provider must not be called without a token")
+
+    monkeypatch.setattr("emporio.correios.urlopen", unexpected_urlopen)
+    adapter = CorreiosHttpAdapter(
+        CorreiosConfig(True, "https://apihom.correios.com.br", None)
+    )
+    with pytest.raises(CorreiosUnavailable, match="token is not configured"):
+        adapter.track("AB123456789BR")
+    assert not called
+
+
+@pytest.mark.parametrize("failure", [URLError("offline"), TimeoutError("timeout")])
+def test_correios_mocked_transport_failures_are_unavailable(monkeypatch, failure):
+    monkeypatch.setattr("emporio.correios.urlopen", lambda request, timeout: (_ for _ in ()).throw(failure))
+    adapter = CorreiosHttpAdapter(
+        CorreiosConfig(True, "https://apihom.correios.com.br", "secret")
+    )
+    with pytest.raises(CorreiosUnavailable, match="usable tracking data"):
+        adapter.track("AB123456789BR")
+
+
+def test_correios_wrong_content_type_is_unavailable(monkeypatch):
+    response = MockCorreiosResponse(correios_payload())
+    response.headers = type("Headers", (), {"get_content_type": lambda self: "text/html"})()
+    monkeypatch.setattr("emporio.correios.urlopen", lambda request, timeout: response)
+    adapter = CorreiosHttpAdapter(
+        CorreiosConfig(True, "https://apihom.correios.com.br", "secret")
+    )
+    with pytest.raises(CorreiosUnavailable, match="unusable response"):
+        adapter.track("AB123456789BR")
+
+
+def test_disabled_correios_never_calls_provider(monkeypatch):
+    called = False
+
+    def unexpected_urlopen(request, timeout):
+        nonlocal called
+        called = True
+        raise AssertionError("disabled adapter must not call the provider")
+
+    monkeypatch.setattr("emporio.correios.urlopen", unexpected_urlopen)
+    with pytest.raises(CorreiosUnavailable, match="disabled"):
+        CorreiosHttpAdapter(CorreiosConfig()).track("AB123456789BR")
+    assert not called
