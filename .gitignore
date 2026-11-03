@@ -1,0 +1,19 @@
+# Supplied challenge data and internal documents; keep local until publication permission is confirmed.
+/Desafio_Técnico_AI_Engineer_2026-20260616T150750Z-3-001/
+
+# Rendered BMAD workflow snapshots are generated artifacts.
+/_bmad/render/
+
+# Local Python/runtime artifacts.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets and local environment overrides.
+.env
+.env.*
+!.env.example
