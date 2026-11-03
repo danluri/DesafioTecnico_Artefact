@@ -27,3 +27,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-apply-promotions-and-calculate-payment-options.md`
   summary: Add a transaction-scoped repository read for product and promotion payment calculations.
   evidence: PaymentService currently reads the product and active promotions through separate repository calls; reproduce a concurrent snapshot replacement before changing the repository API.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-1-check-authorized-order-status.md`
+  summary: Introduce immutable version IDs and a transaction-scoped read spanning order, items, and snapshot metadata.
+  evidence: P0 rejects mixed catalog/order refreshes and keeps the read path bounded, but a concurrent replacement can still require a stronger versioned snapshot contract before production use.

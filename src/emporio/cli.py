@@ -8,6 +8,8 @@ from pathlib import Path
 from .catalog import CatalogError, PaymentResult, Product
 from .catalog_service import CatalogService
 from .catalog_sqlite import SQLiteCatalogRepository
+from .order import AuthorizedPrincipal, OrderStatusSnapshot
+from .order_service import OrderService
 from .payment_service import PaymentService
 from .policy import PolicyError
 from .policy_source import PdfPolicyRetriever
@@ -24,12 +26,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--categories-csv", type=Path, help="Categories CSV to ingest atomically")
     parser.add_argument("--promotions-csv", type=Path, help="Promotions CSV to ingest atomically")
     parser.add_argument(
-        "--catalog-action", choices=("search", "detail", "payment"), help="Catalog action"
+        "--catalog-action", choices=("search", "detail", "payment", "order-status"),
+        help="Catalog or order snapshot action"
     )
     parser.add_argument("--name", help="Product name criterion")
     parser.add_argument("--category", help="Category criterion")
     parser.add_argument("--maximum-budget", help="Maximum BRL budget")
     parser.add_argument("--product", help="Product ID or exact name for detail")
+    parser.add_argument("--order", "--order-id", dest="order_reference", help="Order reference")
+    parser.add_argument(
+        "--demo-server-principal", type=int,
+        help="Demo only: customer ID supplied as an explicit server-established principal",
+    )
+    parser.add_argument(
+        "--customers-csv", type=Path, help="Customers CSV for order snapshot ingestion"
+    )
+    parser.add_argument("--orders-csv", type=Path, help="Orders CSV for order snapshot ingestion")
+    parser.add_argument(
+        "--order-items-csv", type=Path, help="Order items CSV for order snapshot ingestion"
+    )
     parser.add_argument("--pix", action="store_true", help="Calculate the PIX option")
     parser.add_argument("--installments", type=int, help="Number of installments (1 to 12)")
     parser.add_argument("--limit", type=int, default=10)
@@ -45,7 +60,21 @@ def main(argv: list[str] | None = None) -> int:
                 raise CatalogError("--catalog-db is required for catalog actions")
             repository = SQLiteCatalogRepository.connect(args.catalog_db)
             if args.products_csv:
-                repository.ingest(args.products_csv, args.categories_csv, args.promotions_csv)
+                repository.ingest(
+                    args.products_csv, args.categories_csv, args.promotions_csv,
+                    customers_csv=args.customers_csv, orders_csv=args.orders_csv,
+                    order_items_csv=args.order_items_csv,
+                )
+            elif any((args.customers_csv, args.orders_csv, args.order_items_csv)):
+                raise CatalogError("products source is required for a complete snapshot")
+            if args.catalog_action == "order-status":
+                principal = (
+                    AuthorizedPrincipal(args.demo_server_principal)
+                    if args.demo_server_principal is not None else None
+                )
+                result = OrderService(repository).get_status(args.order_reference, principal)
+                print(_render_order(result) if result else OrderService.safe_message())
+                return 0
             service = CatalogService(repository)
             if args.catalog_action == "payment":
                 if not args.product or not args.product.isdigit():
@@ -105,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
             "Confirme o snapshot e tente novamente."
         )
         return 2
+    except (ValueError, TypeError):
+        print(OrderService.safe_message())
+        return 0
     except PolicyError:
         print(
             "Não foi possível consultar o manual da loja com segurança. "
@@ -164,6 +196,21 @@ def _render_payment(payment: PaymentResult) -> str:
         "(não é preço em tempo real)."
     )
     lines.append("; ".join(payment.assumptions))
+    return "\n".join(lines)
+
+
+def _render_order(order: OrderStatusSnapshot) -> str:
+    lines = [
+        f"Pedido {order.order_id}: {order.status}",
+        f"Data do pedido: {order.order_date.isoformat()}",
+        f"Total: {_brl(order.total_brl)}",
+        f"Pagamento: {order.payment_method}",
+        f"Itens: {', '.join(f'{item.product_id} ({item.quantity} un.)' for item in order.items)}",
+        f"Snapshot de {order.snapshot.data_as_of.isoformat()} (não é rastreamento em tempo real).",
+        order.tracking_message,
+    ]
+    if order.estimated_delivery:
+        lines.insert(5, f"Previsão no snapshot: {order.estimated_delivery}")
     return "\n".join(lines)
 
 
