@@ -130,7 +130,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except CatalogError:
         print(
-            "NÃ£o foi possÃ­vel consultar o catÃ¡logo com seguranÃ§a. "
+            "cat\u00e1logo: n\u00e3o foi poss\u00edvel consultar o cat\u00e1logo "
+            "com seguran\u00e7a. "
             "Confirme o snapshot e tente novamente."
         )
         return 2
@@ -152,7 +153,7 @@ def _brl(value: object) -> str:
 def _render_product(product: Product) -> str:
     specs = ", ".join(f"{key}: {value}" for key, value in product.specs.items())
     return (
-        f"EspecificaÃ§Ãµes: {specs}\n"
+        f"Especificacoes: {specs}\n"
         f"{product.name} (ID {product.product_id})\nDescrição: {product.description}\n"
         f"Preço no snapshot: {_brl(product.price_brl)}\n"
         f"Disponibilidade: {product.stock_quantity} unidades; status {product.status}\n"

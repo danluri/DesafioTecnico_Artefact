@@ -2,6 +2,16 @@
 
 The offline P0 application uses SQLite and requires no external credentials. The session boundary is available through `SessionService` and stores only normalized, bounded message envelopes.
 
+Store-policy coverage is deterministic and offline by default. Order snapshots accept `debit` and
+optional `package_weight_kg`, `package_length_cm`, `package_width_cm`, and
+`package_height_cm` product columns. `ShippingService` applies the Campo Grande R$ 35/free rule
+and otherwise returns explicitly simulated Correios PAC/SEDEX and Jadlog options; incomplete
+package data and oversized parcels produce an explicit response instead of an invented quote.
+`PaymentService.calculate_combinations` supports PIX-plus-card options only above R$ 2.000,00 and
+never stacks a PIX discount with a promotion. `generate_fake_tracking_code` and
+`MockCorreiosTracking` are local-only. `PostSaleService` persists authorized complaints in SQLite
+and generates return instructions/codes; unauthorized order references return no private data.
+
 The assistant defaults to deterministic `FakeLLM`. An optional local Llama/Ollama-compatible
 endpoint can be selected without adding a startup dependency or credentials:
 

@@ -31,6 +31,9 @@ _PRODUCT_COLUMNS = {
     "specs",
     "created_at",
 }
+_PACKAGE_COLUMNS = {
+    "package_weight_kg", "package_length_cm", "package_width_cm", "package_height_cm",
+}
 _CATEGORY_COLUMNS = {"category_id", "name", "description"}
 _STATUSES = {"active", "discontinued", "coming_soon"}
 _PROMOTION_COLUMNS = {"promotion_id", "product_id", "discount_percent", "description", "is_active"}
@@ -41,7 +44,10 @@ _ORDER_COLUMNS = {
 }
 _ORDER_ITEM_COLUMNS = {"order_id", "quantity", "product_id"}
 _ORDER_STATUSES = {"pending", "confirmed", "shipped", "delivered", "cancelled"}
-_PAYMENT_METHODS = {"pix", "card", "cash", *{f"credit_{count}x" for count in range(1, 13)}}
+_PAYMENT_METHODS = {
+    "pix", "card", "cash", "debit", "boleto",
+    *{f"credit_{count}x" for count in range(1, 13)},
+}
 
 
 def _like_pattern(value: str) -> str:
@@ -49,14 +55,17 @@ def _like_pattern(value: str) -> str:
     return f"%{escaped}%"
 
 
-def _read_csv(path: Path, required: set[str]) -> list[dict[str, str]]:
+def _read_csv(
+    path: Path, required: set[str], optional: set[str] | None = None
+) -> list[dict[str, str]]:
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             fieldnames = reader.fieldnames
             if fieldnames is None or len(fieldnames) != len(set(fieldnames)):
                 raise CatalogIngestionError(f"duplicate CSV columns in {path.name}")
-            if set(fieldnames) != required:
+            allowed = required | (optional or set())
+            if not required.issubset(set(fieldnames)) or not set(fieldnames) <= allowed:
                 raise CatalogIngestionError(f"CSV columns do not match schema in {path.name}")
             rows = list(reader)
     except CatalogIngestionError:
@@ -66,7 +75,10 @@ def _read_csv(path: Path, required: set[str]) -> list[dict[str, str]]:
     if not rows:
         raise CatalogIngestionError(f"{path.name} is empty")
     for index, row in enumerate(rows, 2):
-        if set(row) != required or any(not isinstance(value, str) for value in row.values()):
+        if (
+            not required.issubset(set(row))
+            or any(not isinstance(value, str) for value in row.values())
+        ):
             raise CatalogIngestionError(f"malformed row {index} in {path.name}")
     return rows
 
@@ -110,6 +122,19 @@ def _percent(value: str, *, source: str) -> Decimal:
     if not amount.is_finite() or amount < 0 or amount > 100 or amount.as_tuple().exponent < -2:
         raise CatalogIngestionError(f"{source}: discount_percent is invalid")
     return amount.quantize(Decimal("0.01"))
+
+
+def _measurement(row: dict[str, str], key: str, *, source: str) -> str | None:
+    value = row.get(key, "").strip()
+    if not value:
+        return None
+    try:
+        amount = Decimal(value.replace(",", "."))
+    except InvalidOperation as exc:
+        raise CatalogIngestionError(f"{source}: {key} is invalid") from exc
+    if not amount.is_finite() or amount <= 0 or amount > Decimal("100000"):
+        raise CatalogIngestionError(f"{source}: {key} is invalid")
+    return str(amount.quantize(Decimal("0.01")))
 
 
 def _bool_flag(value: str, *, source: str) -> int:
@@ -244,6 +269,19 @@ def _validate_rows(
             raise CatalogIngestionError(f"{source}: specs must be valid JSON") from exc
         if not isinstance(specs, dict):
             raise CatalogIngestionError(f"{source}: specs must be a JSON object")
+        package_values = tuple(
+            _measurement(row, key, source=source)
+            for key in (
+                "package_weight_kg", "package_length_cm", "package_width_cm",
+                "package_height_cm",
+            )
+        )
+        if any(value is not None for value in package_values) and any(
+            value is None for value in package_values
+        ):
+            raise CatalogIngestionError(
+                f"{source}: all package weight and dimension fields are required together"
+            )
         products.append(
             (
                 product_id,
@@ -255,6 +293,7 @@ def _validate_rows(
                 status,
                 json.dumps(specs, ensure_ascii=False, sort_keys=True),
                     _iso_datetime(_text(row, "created_at", source=source), source=source),
+                *package_values,
             )
         )
     if category_rows is None:
@@ -318,7 +357,11 @@ class SQLiteCatalogRepository:
                 stock_quantity INTEGER NOT NULL,
                 status TEXT NOT NULL,
                 specs TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                package_weight_kg TEXT,
+                package_length_cm TEXT,
+                package_width_cm TEXT,
+                package_height_cm TEXT
             );
             CREATE TABLE IF NOT EXISTS promotions (
                 promotion_id INTEGER PRIMARY KEY,
@@ -344,6 +387,9 @@ class SQLiteCatalogRepository:
                 PRIMARY KEY (order_id, product_id)
             );
         """)
+        columns = {row[1] for row in self._connection.execute("PRAGMA table_info(products)")}
+        for column in _PACKAGE_COLUMNS - columns:
+            self._connection.execute(f"ALTER TABLE products ADD COLUMN {column} TEXT")
         self._connection.commit()
 
     def ingest(
@@ -361,7 +407,7 @@ class SQLiteCatalogRepository:
             metadata = SnapshotMetadata(data_as_of or datetime.now(timezone.utc))
         except (TypeError, ValueError) as exc:
             raise CatalogIngestionError("data_as_of must be timezone-aware") from exc
-        products = _read_csv(products_csv, _PRODUCT_COLUMNS)
+        products = _read_csv(products_csv, _PRODUCT_COLUMNS, _PACKAGE_COLUMNS)
         categories = _read_csv(categories_csv, _CATEGORY_COLUMNS) if categories_csv else None
         product_values, category_values = _validate_rows(products, categories)
         promotion_values = _validate_promotions(
@@ -399,7 +445,10 @@ class SQLiteCatalogRepository:
                         "INSERT INTO categories VALUES (?, ?, ?)", category_values
                     )
                 self._connection.executemany(
-                    "INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", product_values
+                    "INSERT INTO products (product_id, price_brl, name, category_id, description, "
+                    "stock_quantity, status, specs, created_at, package_weight_kg, "
+                    "package_length_cm, package_width_cm, package_height_cm) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", product_values
                 )
                 if promotion_values:
                     self._connection.executemany(
@@ -535,6 +584,14 @@ class SQLiteCatalogRepository:
             specs=json.loads(row["specs"]),
             created_at=row["created_at"],
             snapshot=self._metadata(),
+            package_weight_kg=(Decimal(row["package_weight_kg"])
+                              if row["package_weight_kg"] else None),
+            package_length_cm=(Decimal(row["package_length_cm"])
+                               if row["package_length_cm"] else None),
+            package_width_cm=(Decimal(row["package_width_cm"])
+                              if row["package_width_cm"] else None),
+            package_height_cm=(Decimal(row["package_height_cm"])
+                               if row["package_height_cm"] else None),
         )
 
     def search(self, criteria: SearchCriteria) -> tuple[tuple[Product, ...], int, SnapshotMetadata]:

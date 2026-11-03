@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from .text import normalize_customer_text
+
 
 class WhatsAppVerificationError(Exception):
     pass
@@ -131,7 +133,9 @@ def _normalize(payload: Any) -> InboundWhatsAppMessage:
         raise WhatsAppVerificationError("invalid webhook shape") from None
     if not all(isinstance(item, str) and item.strip() for item in (message_id, sender, text)):
         raise WhatsAppVerificationError("invalid normalized message")
-    return InboundWhatsAppMessage(message_id, sender, text.strip(), datetime.now(timezone.utc))
+    return InboundWhatsAppMessage(
+        message_id, sender, normalize_customer_text(text), datetime.now(timezone.utc)
+    )
 
 
 class _SQLiteIdempotency:

@@ -24,7 +24,7 @@ from emporio.whatsapp import WhatsAppConfig, WhatsAppVerificationError, WhatsApp
 
 
 def correios_payload(
-    code="AB123456789BR",
+    code="BRAB1234567BR",
     status="Objeto em transito",
     observed_at="2026-11-03T12:00:00Z",
     message=None,
@@ -151,11 +151,11 @@ def test_correios_http_normalizes_and_uses_bearer(monkeypatch):
     class Headers:
         def get_content_type(self): return "application/json"
     Response.headers = Headers()
-    payload = {"quantidade": 1, "objetos": [{"codObjeto": "AB123", "eventos": [{"descricao": "Em trânsito", "dtHrCriado": "2026-11-03T12:00:00Z"}]}]}
+    payload = {"quantidade": 1, "objetos": [{"codObjeto": "BRAB1234567BR", "eventos": [{"descricao": "Em trânsito", "dtHrCriado": "2026-11-03T12:00:00Z"}]}]}
     Response.read = lambda self: json.dumps(payload).encode()
-    result = CorreiosHttpAdapter(CorreiosConfig(True, "https://apihom.correios.com.br", "secret", 2)).track("AB123")
+    result = CorreiosHttpAdapter(CorreiosConfig(True, "https://apihom.correios.com.br", "secret", 2)).track("BRAB1234567BR")
     assert result.status == "Em trânsito" and result.source == "Correios Rastro"
-    assert captured == {"url": "https://apihom.correios.com.br/srorastro/v1/objetos/AB123?resultado=T", "auth": "Bearer secret", "timeout": 2}
+    assert captured == {"url": "https://apihom.correios.com.br/srorastro/v1/objetos/BRAB1234567BR?resultado=T", "auth": "Bearer secret", "timeout": 2}
 
 
 def test_correios_config_repr_redacts_token():
@@ -164,7 +164,7 @@ def test_correios_config_repr_redacts_token():
 
 
 @pytest.mark.parametrize("payload", [
-    {"quantidade": 2, "objetos": [{"codObjeto": "AB123", "eventos": []}]},
+    {"quantidade": 2, "objetos": [{"codObjeto": "BRAB1234567BR", "eventos": []}]},
     {"quantidade": 1, "objetos": [{"codObjeto": "OTHER", "eventos": []}]},
 ])
 def test_correios_rejects_inconsistent_or_unexpected_envelope(monkeypatch, payload):
@@ -176,7 +176,7 @@ def test_correios_rejects_inconsistent_or_unexpected_envelope(monkeypatch, paylo
         def read(self): return json.dumps(payload).encode()
     monkeypatch.setattr("emporio.correios.urlopen", lambda request, timeout: Response())
     with pytest.raises(CorreiosUnavailable):
-        CorreiosHttpAdapter(CorreiosConfig(True, "https://apihom.correios.com.br", "secret")).track("AB123")
+        CorreiosHttpAdapter(CorreiosConfig(True, "https://apihom.correios.com.br", "secret")).track("BRAB1234567BR")
 
 
 def test_correios_malformed_response_is_safe(monkeypatch):
@@ -186,7 +186,7 @@ def test_correios_malformed_response_is_safe(monkeypatch):
         def read(self): return b"{}"
     monkeypatch.setattr("emporio.correios.urlopen", lambda request, timeout: Response())
     with pytest.raises(CorreiosUnavailable):
-        CorreiosHttpAdapter(CorreiosConfig(True, "https://apihom.correios.com.br", "secret")).track("AB123")
+        CorreiosHttpAdapter(CorreiosConfig(True, "https://apihom.correios.com.br", "secret")).track("BRAB1234567BR")
 
 
 def test_correios_authorization_and_snapshot_fallback():
@@ -237,12 +237,12 @@ def test_correios_generated_payload_is_normalized_and_sent_with_bearer(monkeypat
     monkeypatch.setattr("emporio.correios.urlopen", fake_urlopen)
     result = CorreiosHttpAdapter(
         CorreiosConfig(True, "https://apihom.correios.com.br", "secret", 2)
-    ).track("AB123456789BR")
+    ).track("BRAB1234567BR")
     assert result.status == "Objeto em transito"
     assert result.message == "Acompanhe pelo canal oficial."
     assert result.source == "Correios Rastro"
     assert captured == {
-        "url": "https://apihom.correios.com.br/srorastro/v1/objetos/AB123456789BR?resultado=T",
+        "url": "https://apihom.correios.com.br/srorastro/v1/objetos/BRAB1234567BR?resultado=T",
         "auth": "Bearer secret",
         "timeout": 2,
     }
@@ -260,7 +260,7 @@ def test_correios_mocked_http_failures_are_unavailable(monkeypatch, status):
         CorreiosConfig(True, "https://apihom.correios.com.br", "secret")
     )
     with pytest.raises(CorreiosUnavailable, match="unusable response"):
-        adapter.track("AB123456789BR")
+        adapter.track("BRAB1234567BR")
 
 
 def test_correios_missing_credential_does_not_call_provider(monkeypatch):
@@ -276,7 +276,7 @@ def test_correios_missing_credential_does_not_call_provider(monkeypatch):
         CorreiosConfig(True, "https://apihom.correios.com.br", None)
     )
     with pytest.raises(CorreiosUnavailable, match="token is not configured"):
-        adapter.track("AB123456789BR")
+        adapter.track("BRAB1234567BR")
     assert not called
 
 
@@ -287,7 +287,7 @@ def test_correios_mocked_transport_failures_are_unavailable(monkeypatch, failure
         CorreiosConfig(True, "https://apihom.correios.com.br", "secret")
     )
     with pytest.raises(CorreiosUnavailable, match="usable tracking data"):
-        adapter.track("AB123456789BR")
+        adapter.track("BRAB1234567BR")
 
 
 def test_correios_wrong_content_type_is_unavailable(monkeypatch):
@@ -298,7 +298,7 @@ def test_correios_wrong_content_type_is_unavailable(monkeypatch):
         CorreiosConfig(True, "https://apihom.correios.com.br", "secret")
     )
     with pytest.raises(CorreiosUnavailable, match="unusable response"):
-        adapter.track("AB123456789BR")
+        adapter.track("BRAB1234567BR")
 
 
 def test_disabled_correios_never_calls_provider(monkeypatch):
@@ -311,12 +311,12 @@ def test_disabled_correios_never_calls_provider(monkeypatch):
 
     monkeypatch.setattr("emporio.correios.urlopen", unexpected_urlopen)
     with pytest.raises(CorreiosUnavailable, match="disabled"):
-        CorreiosHttpAdapter(CorreiosConfig()).track("AB123456789BR")
+        CorreiosHttpAdapter(CorreiosConfig()).track("BRAB1234567BR")
     assert not called
 
 
 def test_mock_correios_returns_deterministic_local_data_without_network():
-    result = MockCorreiosTracking().track("AB123456789BR")
+    result = MockCorreiosTracking().track("BRAB1234567BR")
     assert result.status == "Objeto em tr\u00e2nsito"
     assert result.source == "Mock Correios"
     assert "no Correios request" in result.provenance
@@ -394,7 +394,7 @@ def test_mock_correios_is_network_free_and_preserves_authorization(monkeypatch):
             return "snapshot" if isinstance(principal, AuthorizedPrincipal) else None
 
         def get_tracking_code(self, reference, principal):
-            return "AB123456789BR" if isinstance(principal, AuthorizedPrincipal) else None
+            return "BRAB1234567BR" if isinstance(principal, AuthorizedPrincipal) else None
 
     service = AuthorizedCorreiosTrackingService(Orders(), MockCorreiosTracking())
     assert service.lookup("1", None) is None

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -23,6 +24,30 @@ class CorreiosError(Exception):
 
 class CorreiosUnavailable(CorreiosError):
     """The optional provider cannot safely supply live tracking."""
+
+
+TRACKING_CODE_PATTERN = re.compile(r"^BR[A-Z0-9]{9}BR$")
+
+
+def validate_tracking_code(code: str) -> str:
+    """Validate the store policy shape: BR + 9 alphanumeric characters + BR."""
+    if not isinstance(code, str):
+        raise CorreiosUnavailable("invalid tracking code")
+    normalized = code.strip().upper()
+    if not TRACKING_CODE_PATTERN.fullmatch(normalized):
+        raise CorreiosUnavailable("invalid tracking code")
+    return normalized
+
+
+def generate_fake_tracking_code(seed: str | int) -> str:
+    """Generate a stable, clearly synthetic-looking valid Correios-shaped code."""
+    if not isinstance(seed, (str, int)) or isinstance(seed, bool) or not str(seed).strip():
+        raise ValueError("tracking seed is required")
+    digest = __import__("hashlib").sha256(str(seed).encode("utf-8")).hexdigest().upper()
+    return "BR" + "".join(str(int(char, 16) % 10) for char in digest[:9]) + "BR"
+
+
+fake_tracking_code = generate_fake_tracking_code
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +121,7 @@ class CorreiosHttpAdapter:
     def track(self, tracking_code: str) -> TrackingResult:
         if not self.config.enabled:
             raise CorreiosUnavailable("Correios tracking is disabled")
-        code = tracking_code.strip()
-        if not code or len(code) > 13 or not code.isalnum():
-            raise CorreiosUnavailable("invalid tracking code")
+        code = validate_tracking_code(tracking_code)
         if not self.config.token:
             raise CorreiosUnavailable("Correios token is not configured")
         parsed = urlsplit(self.config.base_url or "")

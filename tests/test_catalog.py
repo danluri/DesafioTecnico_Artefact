@@ -182,7 +182,7 @@ def test_cli_catalog_connection_error_is_safe(
     )
     output = capsys.readouterr().out
     assert result == 2
-    assert "catÃ¡logo" in output
+    assert "cat\u00e1logo" in output
     assert "manual" not in output
     assert "Traceback" not in output
 

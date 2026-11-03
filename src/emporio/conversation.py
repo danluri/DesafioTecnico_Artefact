@@ -15,6 +15,7 @@ from .observability import Observability, SafetyEvent, elapsed_ms
 from .order import AuthorizedPrincipal
 from .session import PersistenceState, SessionAccessError, SessionId, SessionValidationError
 from .session_service import SessionService
+from .text import normalize_customer_text
 from .tools import (
     ToolAuthorizationError,
     ToolExecutionError,
@@ -72,7 +73,9 @@ class ConversationService:
                 if session_id is None
                 else self.sessions.get_context(session_id, principal)
             )
-            context = self.sessions.append_message(context.session_id, "user", text, principal)
+            context = self.sessions.append_message(
+                context.session_id, "user", normalize_customer_text(text), principal
+            )
         except (SessionAccessError, SessionValidationError):
             context = self.sessions.create_session(principal)
             result = "Não consegui acessar essa sessão. Iniciei uma nova sessão segura."
@@ -115,7 +118,7 @@ class ConversationService:
                 result = (
                     "Encontrei apenas parte das informações permitidas. Alguns campos continuam indisponíveis no snapshot."
                     if partial
-                    else response.message.content.strip()
+                    else normalize_customer_text(response.message.content)
                     or "Não consegui preparar uma resposta segura."
                 )
                 outcome = "partial" if partial else "success"

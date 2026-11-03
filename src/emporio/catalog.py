@@ -62,6 +62,10 @@ class Product:
     specs: Mapping[str, object]
     created_at: str
     snapshot: SnapshotMetadata
+    package_weight_kg: Decimal | None = None
+    package_length_cm: Decimal | None = None
+    package_width_cm: Decimal | None = None
+    package_height_cm: Decimal | None = None
 
     @property
     def is_available(self) -> bool:
@@ -99,6 +103,17 @@ class PaymentResult:
     shipping_brl: Decimal
     snapshot: SnapshotMetadata
     assumptions: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PaymentCombination:
+    """A deterministic PIX deposit plus card remainder option."""
+
+    pix_amount_brl: Decimal
+    card_amount_brl: Decimal
+    installments: InstallmentOption
+    total_brl: Decimal
+    description: str
 
 
 @dataclass(frozen=True, slots=True)

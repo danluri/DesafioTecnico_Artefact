@@ -8,6 +8,7 @@ from .catalog import (
     AmbiguousPromotionError,
     InstallmentOption,
     PaymentCalculationError,
+    PaymentCombination,
     PaymentResult,
     Product,
     Promotion,
@@ -37,6 +38,60 @@ class PaymentService:
             raise PaymentCalculationError("product was not found in the snapshot")
         promotions = self._repository.active_promotions(product_id)
         return self.calculate_for_product(product, promotions, pix=pix, installments=installments)
+
+    def calculate_combinations(
+        self,
+        product_id: int,
+        *,
+        pix_percent: Decimal = Decimal("0.20"),
+        installments: tuple[int, ...] = (1, 3, 6, 12),
+    ) -> tuple[PaymentCombination, ...]:
+        """Return market-style split payments for an eligible non-promotional total."""
+        product = self._repository.find_by_id(product_id)
+        if product is None:
+            raise PaymentCalculationError("product was not found in the snapshot")
+        promotions = self._repository.active_promotions(product_id)
+        if promotions:
+            raise PaymentCalculationError("PIX split is not available with a promotion")
+        return self.calculate_combinations_for_total(
+            product.price_brl, pix_percent=pix_percent, installments=installments
+        )
+
+    @staticmethod
+    def calculate_combinations_for_total(
+        total: Decimal,
+        *,
+        pix_percent: Decimal = Decimal("0.20"),
+        installments: tuple[int, ...] = (1, 3, 6, 12),
+    ) -> tuple[PaymentCombination, ...]:
+        total = _brl(total)
+        pix_percent = Decimal(pix_percent)
+        if total <= Decimal("2000.00"):
+            raise PaymentCalculationError("PIX split requires a total above R$ 2.000,00")
+        if not pix_percent.is_finite() or not Decimal("0") < pix_percent < Decimal("1"):
+            raise PaymentCalculationError("PIX split percentage must be between 0 and 1")
+        if not installments or len(set(installments)) != len(installments):
+            raise PaymentCalculationError("installment options are invalid")
+        pix_amount = _brl(total * pix_percent)
+        card_amount = _brl(total - pix_amount)
+        options: list[PaymentCombination] = []
+        for count in installments:
+            if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 12:
+                raise PaymentCalculationError("installments must be between 1 and 12")
+            if card_amount / count < Decimal("100.00"):
+                continue
+            amount = _brl(card_amount / count)
+            final = _brl(card_amount - amount * (count - 1))
+            option = InstallmentOption(count, amount, final)
+            options.append(PaymentCombination(
+                pix_amount, card_amount, option, total,
+                f"{pix_amount} no PIX + {card_amount} no cartão em {count}x",
+            ))
+        if not options:
+            raise PaymentCalculationError("no valid card installment remains after the PIX split")
+        return tuple(options)
+
+    combinations = calculate_combinations
 
     @staticmethod
     def calculate_for_product(

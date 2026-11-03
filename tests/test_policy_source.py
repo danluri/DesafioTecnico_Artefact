@@ -5,7 +5,8 @@ import pytest
 
 from emporio.cli import main
 from emporio.policy import PolicySourceError
-from emporio.policy_source import PdfPolicyRetriever
+from emporio.policy_source import PdfPolicyRetriever, TextPolicyRetriever
+from emporio.service import PolicyService
 
 
 def test_missing_pdf_is_a_typed_source_error(tmp_path: Path) -> None:
@@ -72,3 +73,16 @@ def test_cli_returns_safe_response_for_malformed_pdf(
     assert result == 2
     assert "manual da loja" in output
     assert "Traceback" not in output
+
+
+def test_policy_retrieval_is_lexical_bounded_and_provenance_bearing():
+    retriever = TextPolicyRetriever.from_text(
+        "shipping policy local Campo Grande\n---\n"
+        "payment policy PIX discount\n---\n"
+        "shipping policy PAC Correios"
+    )
+    answer = PolicyService(retriever).answer("shipping Correios")
+    assert answer.passages
+    assert answer.passages[0].score >= 1
+    assert answer.passages[0].provenance.source_file == "fixture.txt"
+    assert len(answer.passages) <= 5

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from .correios import CorreiosUnavailable, TrackingResult
+from .correios import TrackingResult, validate_tracking_code
 from .whatsapp import WhatsAppConfig, WhatsAppWebhookAdapter, WhatsAppWebhookResult
 
 MOCK_WHATSAPP_APP_SECRET = "local-whatsapp-simulator-secret"
@@ -25,9 +25,7 @@ class MockCorreiosTracking:
     message: str = "Resultado sintetico para desenvolvimento local."
 
     def track(self, tracking_code: str) -> TrackingResult:
-        code = tracking_code.strip() if isinstance(tracking_code, str) else ""
-        if not code or len(code) > 13 or not code.isalnum():
-            raise CorreiosUnavailable("invalid tracking code")
+        validate_tracking_code(tracking_code)
         return TrackingResult(
             status=self.status,
             observed_at=self.observed_at,

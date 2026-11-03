@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping, Sequence
 
+from .text import normalize_customer_text
+
 
 class LLMError(Exception):
     """A provider could not produce a normalized response."""
@@ -95,7 +97,7 @@ class FakeLLM(LLMPort):
 
     @staticmethod
     def response(text: str) -> LLMResponse:
-        return LLMResponse(LLMMessage(MessageRole.ASSISTANT, text))
+        return LLMResponse(LLMMessage(MessageRole.ASSISTANT, normalize_customer_text(text)))
 
     @staticmethod
     def tool_call(
