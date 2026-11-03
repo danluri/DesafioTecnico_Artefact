@@ -25,6 +25,24 @@ EMPORIO_LLAMA_TIMEOUT=10
 If the endpoint is unavailable, the request reports a clear provider limitation; selecting
 `EMPORIO_LLM_PROVIDER=fake` remains fully offline and deterministic.
 
+Policy retrieval also supports an optional local semantic mode. It uses an Ollama-compatible
+embedding endpoint and persists a bounded local index; it is disabled by default and falls back
+to lexical retrieval whenever the endpoint is unavailable or returns invalid data:
+
+```text
+EMPORIO_POLICY_SEMANTIC_ENABLED=true
+EMPORIO_POLICY_EMBEDDING_BASE_URL=http://host.docker.internal:11434
+EMPORIO_POLICY_EMBEDDING_MODEL=embeddinggemma
+EMPORIO_POLICY_EMBEDDING_TIMEOUT=10
+EMPORIO_POLICY_VECTOR_INDEX=/data/policy-index.json
+```
+
+With Ollama running locally, install the configured model once with
+`ollama pull embeddinggemma`; the endpoint must support `POST /api/embed`.
+
+This mode is local-only when pointed at Ollama in Docker; no hosted embedding API or paid
+provider is required. The base image does not install a heavyweight vector database.
+
 ## Docker
 
 Run `docker compose up --build`. This is a storage-ready P0 container: it initializes SQLite at `/data/emporio.db`, wires `LLMFactory`, `ToolRegistry`, `SessionService`, and `ConversationService`, runs an offline assistant readiness conversation, reports `READY`, and remains running with the named `emporio-data` volume mounted. There is no HTTP or CLI conversation endpoint yet: the readiness conversation proves wiring and storage only; it is not an interactive assistant interface. The default principal-binding HMAC secret is development-only; set `EMPORIO_PRINCIPAL_HMAC_SECRET` to an explicit deployment secret.

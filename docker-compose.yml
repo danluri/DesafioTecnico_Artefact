@@ -10,6 +10,12 @@ services:
       EMPORIO_MCP_ENABLED: "false"
       EMPORIO_WHATSAPP_ENABLED: "false"
       EMPORIO_CORREIOS_ENABLED: "false"
+      # Optional local semantic policy retrieval; lexical retrieval remains the default.
+      # EMPORIO_POLICY_SEMANTIC_ENABLED: "true"
+      # EMPORIO_POLICY_EMBEDDING_BASE_URL: http://host.docker.internal:11434
+      # EMPORIO_POLICY_EMBEDDING_MODEL: embeddinggemma
+      # EMPORIO_POLICY_EMBEDDING_TIMEOUT: "10"
+      # EMPORIO_POLICY_VECTOR_INDEX: /data/policy-index.json
       # Optional WhatsApp primary remote channel; leave unset for offline P0.
       # EMPORIO_WHATSAPP_VERIFY_TOKEN: set-out-of-band
       # EMPORIO_WHATSAPP_ACCESS_TOKEN: set-out-of-band

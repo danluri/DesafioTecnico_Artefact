@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from .catalog import CatalogError, PaymentResult, Product
@@ -12,7 +13,7 @@ from .order import AuthorizedPrincipal, OrderStatusSnapshot
 from .order_service import OrderService
 from .payment_service import PaymentService
 from .policy import PolicyError
-from .policy_source import PdfPolicyRetriever
+from .policy_source import PdfPolicyRetriever, policy_retriever_from_path
 from .service import PolicyService
 
 
@@ -122,10 +123,16 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not args.policy_source or not args.query:
             raise PolicyError("policy source and query are required")
-        retriever = PdfPolicyRetriever.from_path(
-            args.policy_source,
-            document_version=args.document_version,
-        )
+        if os.getenv("EMPORIO_POLICY_SEMANTIC_ENABLED", "false").lower() in {
+            "1", "true", "yes", "on"
+        }:
+            retriever = policy_retriever_from_path(
+                args.policy_source, document_version=args.document_version
+            )
+        else:
+            retriever = PdfPolicyRetriever.from_path(
+                args.policy_source, document_version=args.document_version
+            )
         print(PolicyService(retriever).answer(args.query).render())
         return 0
     except CatalogError:
