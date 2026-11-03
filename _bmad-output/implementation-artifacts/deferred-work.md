@@ -18,3 +18,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-answer-store-and-policy-questions.md`
   summary: Add query-specific CLI messaging for invalid questions.
   evidence: The safe CLI error path currently uses source-failure wording for all PolicyError values; the story requires safe handling but does not prescribe distinct copy.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-search-products-and-show-exact-availability.md`
+  summary: Make catalog reads use one explicit transaction when capturing rows and snapshot metadata.
+  evidence: Concurrent snapshot replacement could theoretically combine a page read with metadata from a different snapshot; reproduce under concurrent ingestion before changing the repository contract.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-search-products-and-show-exact-availability.md`
+  summary: Evaluate Unicode-aware case-insensitive catalog matching.
+  evidence: SQLite LOWER() behavior for accented Portuguese variants may differ from customer expectations; settle with a supported-runtime query matrix before adding normalization infrastructure.
