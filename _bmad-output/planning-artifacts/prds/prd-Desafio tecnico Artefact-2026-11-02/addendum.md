@@ -21,7 +21,7 @@ The package includes:
 1. Use a normalized `LLMPort` and provider adapters; keep SDKs out of domain and orchestration code.
 2. Keep deterministic domain services for catalog, promotion, payment, shipping, availability, and order ownership.
 3. Use structured SQL-style retrieval for operational data and section-aware textual retrieval for the policy document.
-4. Treat CLI/API as the P0 channel; WhatsApp is an optional adapter over the same conversation service.
+4. Treat CLI/API as the P0 validation surfaces; WhatsApp is the primary remote-channel adapter over the same ConversationService, with real delivery isolated behind configuration and credentials. Reserve documented environment variables for the webhook verify token, access token, phone-number ID, API base URL, and feature flag.
 5. Keep Market Comparison and MCP as optional adapters with feature flags, provenance, mocks, and no duplicated business rules.
 6. Use a fake LLM and local fixtures to make the basic test suite independent of network credentials.
 7. Keep Ponytail outside runtime, package dependencies, and CI requirements.
@@ -31,7 +31,7 @@ The package includes:
 - A single LLM over the entire corpus was rejected because it weakens exact-value correctness, provenance, and access control.
 - A vector database for all data was deferred because structured queries are a better baseline for exact operational facts and the policy corpus is small.
 - A universal provider abstraction promising identical support for every model was rejected; capabilities must be verified and surfaced.
-- Real WhatsApp, web market search, and MCP are deferred until P0 is stable because credentials, external failure, and security controls add delivery risk.
+- Real WhatsApp delivery, web market search, and MCP are deferred until P0 is stable because credentials, external failure, and security controls add delivery risk; WhatsApp remains the first remote-channel extension.
 - Copying a third-party `AGENTS.md` over project instructions is rejected; project-specific security and scope rules take precedence.
 
 ## Downstream implementation guardrails

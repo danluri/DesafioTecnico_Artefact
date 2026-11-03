@@ -2,7 +2,7 @@
 title: Empório da Música Trusted AI Assistant
 status: final
 created: 2026-11-02
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # PRD: Empório da Música Trusted AI Assistant
@@ -19,7 +19,7 @@ Empório da Música customers should be able to ask natural-language questions a
 
 The central product bet is that a smaller, explicit, testable assistant is more useful for this challenge than a broad autonomous agent. Deterministic business rules, authorization, source provenance, and honest limitations take precedence over conversational breadth or optional integrations.
 
-The prototype must be easy for an evaluator to run locally, inspect, and test without external credentials. A real LLM provider and optional channels may demonstrate extensibility, but the core product must remain reproducible offline.
+The prototype must be easy for an evaluator to run locally, inspect, and test without external credentials. CLI/API remain the P0 validation surfaces; WhatsApp is the primary remote communication channel when enabled, while real Meta delivery remains an optional post-P0 integration prepared for environment-variable configuration. The core product must remain reproducible offline.
 
 ## 2. Target User
 
@@ -102,7 +102,7 @@ Customers can ask for PIX, installments, and local shipping conditions for a Pro
 - PIX applies the documented 5% rule only when the Product is not covered by a Promotion; discounts are not stacked.
 - Credit installments respect the documented installment bands and minimum-value rule used by the implementation.
 - Currency calculations use BRL-safe decimal arithmetic and a declared rounding rule.
-- The exact R$500 shipping boundary is handled by an explicit documented assumption until confirmed.
+- Local shipping costs R$35 for orders at or below R$500 and is free only for orders above R$500.
 
 ### 4.2 Catalog, Price, Availability, and Promotion
 
@@ -210,14 +210,15 @@ The Assistant can refuse or redirect requests outside the store's supported scop
 
 **Description:** Optional extensions may reuse the same Assistant capabilities without changing core business rules. They must not delay the P0 path and must be clearly labeled when only mocked or partially configured.
 
-#### FR-12: WhatsApp channel adapter `[NON-GOAL for MVP]`
+#### FR-12: Primary remote WhatsApp channel `[POST-P0 INTEGRATION]`
 
-The system may accept and send normalized messages through a WhatsApp adapter.
+WhatsApp is the primary remote communication channel for the Assistant. The system accepts and sends normalized messages through a replaceable WhatsApp adapter over the shared ConversationService.
 
 **Consequences (testable):**
 
 - Webhook payloads are validated, signatures are checked when configured, and duplicate external message IDs are idempotent.
-- Real Meta delivery is not claimed without verified credentials and an executed integration test.
+- The adapter is isolated behind a feature flag and cannot become a dependency of the offline P0 path.
+- Real Meta delivery is not claimed without verified credentials and an executed integration test; its webhook credentials, verification token, phone-number identifier, API base URL, and access token must be supplied through documented environment variables rather than source code.
 
 #### FR-13: Market comparison `[NON-GOAL for MVP]`
 
@@ -280,7 +281,7 @@ The system may expose selected capabilities through an MCP adapter.
 - Real ERP synchronization or live inventory reservation.
 - Production-grade customer authentication and identity recovery.
 - Guaranteed live delivery tracking.
-- Mandatory WhatsApp, market search, MCP, cloud deployment, vector database, or multi-agent runtime.
+- Mandatory real Meta/WhatsApp delivery, market search, MCP, cloud deployment, vector database, or multi-agent runtime.
 - A claim that every LLM provider supports every capability.
 
 ## 8. MVP Scope
@@ -297,7 +298,7 @@ The system may expose selected capabilities through an MCP adapter.
 
 ### 8.2 Out of Scope for MVP
 
-- Real WhatsApp delivery, market search, and MCP exposure; these remain optional post-MVP increments.
+- Real WhatsApp delivery, market search, and MCP exposure; WhatsApp remains the prioritized remote-channel increment after P0.
 - Any feature requiring external credentials for the basic test suite.
 - Public release of raw customer PII or unapproved internal source documents.
 
