@@ -123,7 +123,8 @@ def test_console_returns_bounded_error_when_conversation_raises(tmp_path: Path) 
             "/api/messages",
             {"message_id": "broken-1", "sender": "5511999999999", "text": "oi"},
         )
-        assert status == 503 and body == {"error": "conversation unavailable"}
+        assert status == 503
+        assert body["error"] == "conversation unavailable"
     finally:
         server.shutdown()
         server.server_close()

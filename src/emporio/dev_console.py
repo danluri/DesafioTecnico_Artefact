@@ -116,6 +116,9 @@ class _SessionConversation:
 class DevConsoleApplication:
     def __init__(self, conversation: ConversationService, idempotency_db: str | None = None) -> None:
         self.conversation = conversation
+        self.policy_grounded = hasattr(conversation.llm, "policy")
+        self.policy_source = os.getenv("EMPORIO_POLICY_SOURCE", "")
+        self.database = str(database_path())
         path = idempotency_db or os.getenv("EMPORIO_DEV_IDEMPOTENCY_DB")
         if not path:
             path = str(database_path().with_name("dev-whatsapp-events.db"))
@@ -152,6 +155,9 @@ class DevConsoleApplication:
             "model": getattr(self.conversation.llm, "model", "unknown"),
             "tool_calls": getattr(outcome, "tool_calls", 0),
             "persistence": getattr(getattr(outcome, "persistence", None), "value", None),
+            "policy_grounded": self.policy_grounded,
+            "policy_source_configured": bool(self.policy_source),
+            "database_path": self.database,
         }
         return HTTPStatus.OK, body
 
