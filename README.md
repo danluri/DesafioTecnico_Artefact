@@ -52,6 +52,8 @@ EMPORIO_POLICY_SOURCE=E:\\...\\data\\políticas_da_loja.pdf
 When this variable is set, every LLM turn receives bounded RAG evidence from the policy and
 the read-only `answer_policy` tool is registered. Without sufficient evidence, the assistant is
 instructed to ask the store team for confirmation instead of inventing a rule.
+For local models that do not support Ollama tools, keep `EMPORIO_LLAMA_ENABLE_TOOLS=false`;
+the RAG context still works. Set it to `true` only with a model that supports tool calling.
 
 ## Docker
 

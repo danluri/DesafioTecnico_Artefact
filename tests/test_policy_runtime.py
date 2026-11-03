@@ -29,3 +29,27 @@ def test_runtime_registers_policy_tool(monkeypatch) -> None:
     assert isinstance(llm, PolicyGroundedLLM)
     assert registered is policy
     assert "answer_policy" in tools.names()
+
+
+def test_local_model_does_not_receive_tools_by_default(monkeypatch) -> None:
+    class LocalFake(FakeLLM):
+        provider = "local-llama"
+
+        def __init__(self):
+            super().__init__([FakeLLM.response("resposta")])
+            self.received_tools = None
+
+        def complete(self, messages, *, tools=()):
+            self.received_tools = tools
+            return super().complete(messages, tools=tools)
+
+    monkeypatch.delenv("EMPORIO_LLAMA_ENABLE_TOOLS", raising=False)
+    delegate = LocalFake()
+    policy = PolicyService(TextPolicyRetriever.from_text("Frete PAC: 5 a 12 dias."))
+
+    PolicyGroundedLLM(delegate, policy).complete(
+        (LLMMessage(MessageRole.USER, "Qual o prazo do PAC?"),),
+        tools=({"type": "function"},),
+    )
+
+    assert delegate.received_tools == ()
