@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .catalog import Product, SearchCriteria, SnapshotMetadata
+from .catalog import Product, Promotion, SearchCriteria, SnapshotMetadata
 
 
 class CatalogRepository(Protocol):
@@ -16,3 +16,6 @@ class CatalogRepository(Protocol):
 
     def find_by_name(self, name: str) -> tuple[Product, ...]:
         """Return exact normalized name matches in deterministic order."""
+
+    def active_promotions(self, product_id: int) -> tuple[Promotion, ...]:
+        """Return active snapshot promotions for a product in promotion-ID order."""

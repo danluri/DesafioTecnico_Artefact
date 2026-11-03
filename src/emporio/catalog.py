@@ -24,6 +24,18 @@ class CatalogNotFoundError(CatalogError):
     """The requested product or snapshot does not exist."""
 
 
+class PromotionError(CatalogError):
+    """A promotion cannot be safely applied."""
+
+
+class AmbiguousPromotionError(PromotionError):
+    """More than one active promotion applies to a product."""
+
+
+class PaymentCalculationError(CatalogError):
+    """A payment option is invalid or unsupported by the declared policy."""
+
+
 @dataclass(frozen=True, slots=True)
 class SnapshotMetadata:
     data_as_of: datetime
@@ -54,6 +66,39 @@ class Product:
     @property
     def is_available(self) -> bool:
         return self.status == "active" and self.stock_quantity > 0
+
+
+@dataclass(frozen=True, slots=True)
+class Promotion:
+    promotion_id: int
+    product_id: int
+    discount_percent: Decimal
+    description: str
+    is_active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class InstallmentOption:
+    count: int
+    amount_brl: Decimal
+    final_amount_brl: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class PaymentResult:
+    product: Product
+    promotion: Promotion | None
+    original_price_brl: Decimal
+    discount_percent: Decimal | None
+    discount_brl: Decimal
+    effective_price_brl: Decimal
+    pix_requested: bool
+    pix_applied: bool
+    pix_price_brl: Decimal | None
+    installments: InstallmentOption | None
+    shipping_brl: Decimal
+    snapshot: SnapshotMetadata
+    assumptions: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

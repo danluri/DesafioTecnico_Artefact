@@ -24,3 +24,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-search-products-and-show-exact-availability.md`
   summary: Evaluate Unicode-aware case-insensitive catalog matching.
   evidence: SQLite LOWER() behavior for accented Portuguese variants may differ from customer expectations; settle with a supported-runtime query matrix before adding normalization infrastructure.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-apply-promotions-and-calculate-payment-options.md`
+  summary: Add a transaction-scoped repository read for product and promotion payment calculations.
+  evidence: PaymentService currently reads the product and active promotions through separate repository calls; reproduce a concurrent snapshot replacement before changing the repository API.

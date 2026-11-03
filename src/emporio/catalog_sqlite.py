@@ -14,6 +14,7 @@ from .catalog import (
     CatalogIngestionError,
     CatalogNotFoundError,
     Product,
+    Promotion,
     SearchCriteria,
     SnapshotMetadata,
 )
@@ -31,6 +32,7 @@ _PRODUCT_COLUMNS = {
 }
 _CATEGORY_COLUMNS = {"category_id", "name", "description"}
 _STATUSES = {"active", "discontinued", "coming_soon"}
+_PROMOTION_COLUMNS = {"promotion_id", "product_id", "discount_percent", "description", "is_active"}
 
 
 def _like_pattern(value: str) -> str:
@@ -89,6 +91,22 @@ def _money(value: str, *, source: str) -> Decimal:
         return amount.quantize(Decimal("0.01"))
     except InvalidOperation as exc:
         raise CatalogIngestionError(f"{source}: price_brl is invalid") from exc
+
+
+def _percent(value: str, *, source: str) -> Decimal:
+    try:
+        amount = Decimal(value.strip().replace(",", "."))
+    except (InvalidOperation, AttributeError) as exc:
+        raise CatalogIngestionError(f"{source}: discount_percent is invalid") from exc
+    if not amount.is_finite() or amount < 0 or amount > 100 or amount.as_tuple().exponent < -2:
+        raise CatalogIngestionError(f"{source}: discount_percent is invalid")
+    return amount.quantize(Decimal("0.01"))
+
+
+def _bool_flag(value: str, *, source: str) -> int:
+    if value.strip() not in {"0", "1"}:
+        raise CatalogIngestionError(f"{source}: is_active must be 0 or 1")
+    return int(value.strip())
 
 
 def _iso_datetime(value: str, *, source: str) -> str:
@@ -157,6 +175,27 @@ def _validate_rows(
     return products, categories
 
 
+def _validate_promotions(
+    rows: Iterable[dict[str, str]], product_ids: set[int]
+) -> list[tuple[object, ...]]:
+    values: list[tuple[object, ...]] = []
+    seen: set[int] = set()
+    for index, row in enumerate(rows, 1):
+        source = f"promotion row {index}"
+        promotion_id = _int(row, "promotion_id", source=source)
+        if promotion_id in seen:
+            raise CatalogIngestionError(f"{source}: duplicate promotion_id")
+        seen.add(promotion_id)
+        product_id = _int(row, "product_id", source=source)
+        if product_id not in product_ids:
+            raise CatalogIngestionError(f"{source}: unknown product_id")
+        discount = _percent(_text(row, "discount_percent", source=source), source=source)
+        description = _text(row, "description", source=source)
+        active = _bool_flag(_text(row, "is_active", source=source), source=source)
+        values.append((promotion_id, product_id, str(discount), description, active))
+    return values
+
+
 class SQLiteCatalogRepository:
     """SQLite adapter with a replace-on-success operational snapshot."""
 
@@ -190,6 +229,13 @@ class SQLiteCatalogRepository:
                 specs TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS promotions (
+                promotion_id INTEGER PRIMARY KEY,
+                product_id INTEGER NOT NULL REFERENCES products(product_id),
+                discount_percent TEXT NOT NULL,
+                description TEXT NOT NULL,
+                is_active INTEGER NOT NULL CHECK (is_active IN (0, 1))
+            );
         """)
         self._connection.commit()
 
@@ -197,6 +243,7 @@ class SQLiteCatalogRepository:
         self,
         products_csv: Path,
         categories_csv: Path | None = None,
+        promotions_csv: Path | None = None,
         *,
         data_as_of: datetime | None = None,
     ) -> SnapshotMetadata:
@@ -207,8 +254,13 @@ class SQLiteCatalogRepository:
         products = _read_csv(products_csv, _PRODUCT_COLUMNS)
         categories = _read_csv(categories_csv, _CATEGORY_COLUMNS) if categories_csv else None
         product_values, category_values = _validate_rows(products, categories)
+        promotion_values = _validate_promotions(
+            _read_csv(promotions_csv, _PROMOTION_COLUMNS),
+            {int(value[0]) for value in product_values},
+        ) if promotions_csv else []
         try:
             with self._connection:
+                self._connection.execute("DELETE FROM promotions")
                 self._connection.execute("DELETE FROM products")
                 self._connection.execute("DELETE FROM categories")
                 if category_values:
@@ -218,6 +270,10 @@ class SQLiteCatalogRepository:
                 self._connection.executemany(
                     "INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", product_values
                 )
+                if promotion_values:
+                    self._connection.executemany(
+                        "INSERT INTO promotions VALUES (?, ?, ?, ?, ?)", promotion_values
+                    )
                 self._connection.execute("DELETE FROM catalog_metadata")
                 self._connection.execute(
                     "INSERT INTO catalog_metadata VALUES (?)", (metadata.data_as_of.isoformat(),)
@@ -295,3 +351,16 @@ class SQLiteCatalogRepository:
             (name.strip(),),
         ).fetchall()
         return tuple(self._product(row) for row in rows)
+
+    def active_promotions(self, product_id: int) -> tuple[Promotion, ...]:
+        rows = self._connection.execute(
+            "SELECT * FROM promotions WHERE product_id = ? AND is_active = 1 ORDER BY promotion_id",
+            (product_id,),
+        ).fetchall()
+        return tuple(
+            Promotion(
+                row["promotion_id"], row["product_id"], Decimal(row["discount_percent"]),
+                row["description"], bool(row["is_active"]),
+            )
+            for row in rows
+        )

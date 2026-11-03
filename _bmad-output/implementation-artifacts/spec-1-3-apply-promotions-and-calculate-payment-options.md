@@ -2,7 +2,8 @@
 title: 'Story 1.3 - Apply Promotions and Calculate Payment Options'
 type: 'feature'
 created: '2026-11-03'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '9ff507c3adf91fd47bda303240d16addfde46329'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -51,12 +52,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/emporio/catalog.py` -- define Promotion and payment result/value objects plus typed calculation errors -- keep money and commercial facts deterministic.
-- [ ] `src/emporio/catalog_repository.py` -- extend the repository contract for promotions and product-price lookup -- keep structured operational retrieval behind a port.
-- [ ] `src/emporio/catalog_sqlite.py` -- validate and atomically ingest promotion rows and query active promotions -- reject invalid discounts and duplicate/ambiguous source records.
-- [ ] `src/emporio/payment_service.py` -- calculate promotions, PIX, installments, and shipping with Decimal and explicit assumptions -- prevent discount stacking and unsupported certainty.
-- [ ] `src/emporio/cli.py` -- expose promotion/payment queries in Brazilian Portuguese -- show original, discount, effective, installment, and shipping components clearly.
-- [ ] `tests/` -- cover promotion application, PIX non-stacking, non-promotional PIX, installment boundaries, shipping boundary, multiple promotions, invalid ingestion, and rounding -- remain offline and deterministic.
+- [x] `src/emporio/catalog.py` -- define Promotion and payment result/value objects plus typed calculation errors -- keep money and commercial facts deterministic.
+- [x] `src/emporio/catalog_repository.py` -- extend the repository contract for promotions and product-price lookup -- keep structured operational retrieval behind a port.
+- [x] `src/emporio/catalog_sqlite.py` -- validate and atomically ingest promotion rows and query active promotions -- reject invalid discounts and duplicate/ambiguous source records.
+- [x] `src/emporio/payment_service.py` -- calculate promotions, PIX, installments, and shipping with Decimal and explicit assumptions -- prevent discount stacking and unsupported certainty.
+- [x] `src/emporio/cli.py` -- expose promotion/payment queries in Brazilian Portuguese -- show original, discount, effective, installment, and shipping components clearly.
+- [x] `tests/` -- cover promotion application, PIX non-stacking, non-promotional PIX, installment boundaries, shipping boundary, multiple promotions, invalid ingestion, and rounding -- remain offline and deterministic.
 
 **Acceptance Criteria:**
 - Given an active Promotion in the snapshot, when a product price or payment option is requested, then original price, discount, and promotional price are separated and PIX is not stacked on top.
@@ -67,7 +68,7 @@ context:
 
 ## Implementation Notes
 
-Empty at planning time.
+Implemented validated promotion ingestion, deterministic promotion/payment calculations, banker’s rounding, non-stacking PIX behavior, section 3.1 installment bands, effective-total shipping rules, explicit promotion provenance, and a Portuguese CLI payment action. Payment options now require an available product and reject mixed PIX/installment requests. Installment rounding reconciles the final centavo when equal displayed installments cannot sum exactly.
 
 ## Spec Change Log
 
@@ -75,7 +76,15 @@ Empty at planning time.
 
 ## Review Triage Log
 
-Empty at planning time.
+- `medium (patch)` -- Added CLI payment coverage for original price, promotion discount, effective price, PIX non-stacking, shipping, and snapshot output.
+- `medium (patch)` -- Corrected payment CLI mojibake and added promotion description/ID plus snapshot provenance.
+- `medium (patch)` -- Reconciled rounded installments with an adjusted final installment so the displayed schedule sums to the effective amount.
+- `medium (patch)` -- Shipping now uses the effective order total, so a promotional price determines the R$500 boundary consistently; PIX does not change shipping eligibility.
+- `medium (patch)` -- Payment rejects unavailable products and validates promotion activity, product identity, and discount bounds at the service boundary.
+- `medium (patch)` -- Added regression coverage for promotional rounding and shipping after discount.
+- `maybe-false (defer)` -- A concurrent snapshot replacement could combine a product and promotions from different repository reads; reproduce under concurrent ingestion before introducing a transaction-scoped repository API.
+- `false` -- The claimed zero-value PIX fallback is prevented by an explicit `is not None` check.
+- `false` -- Active promotions are intentionally returned in deterministic promotion-ID order, which is the repository contract; source-row ordering is not required by the approved intent.
 
 ## Design Notes
 
