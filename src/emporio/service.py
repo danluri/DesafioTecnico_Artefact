@@ -19,8 +19,7 @@ class PolicyService:
         if not query or not query.strip():
             raise PolicyQueryError("A policy question cannot be empty")
 
-        passages = self._retriever.search(query, limit=5)
-        passages = tuple(passage for passage in passages if passage.score >= self._minimum_score)
+        passages = self.evidence(query)
         if not passages:
             return PolicyAnswer(
                 text=(
@@ -49,3 +48,11 @@ class PolicyService:
 
         best = passages[:1]
         return PolicyAnswer(text=best[0].text, passages=best)
+
+    def evidence(self, query: str) -> tuple:
+        """Return bounded, score-filtered passages for grounded generation."""
+
+        if not query or not query.strip():
+            raise PolicyQueryError("A policy question cannot be empty")
+        passages = self._retriever.search(query, limit=5)
+        return tuple(passage for passage in passages if passage.score >= self._minimum_score)
