@@ -82,6 +82,16 @@ prerequisites for P0 verification. Enabled WhatsApp webhooks require both
 The runtime readiness command is not an
 interactive chat endpoint.
 
+Correios and WhatsApp have explicit local simulators for development and tests. The
+simulators generate deterministic tracking results and signed WhatsApp-shaped webhooks,
+then exercise the same authorization, signature, normalization, and deduplication seams
+without contacting either provider. They do not require a Correios contract, Meta access,
+network, or real credentials. Use `MockCorreiosTracking`, `mock_whatsapp_config`, and
+`MockWhatsAppChannel` from `emporio.simulators` for local scenarios. The HTTP Correios
+adapter and real WhatsApp configuration remain optional extension points only; enabling
+them without valid provider credentials fails safely and does not turn mock data into a
+real delivery claim.
+
 Correios live tracking is an optional, authorized supplement to the order snapshot. Configure
 `EMPORIO_CORREIOS_ENABLED`, `EMPORIO_CORREIOS_BASE_URL`, `EMPORIO_CORREIOS_TOKEN`, and
 `EMPORIO_CORREIOS_TIMEOUT`. Only the official homologation and production hosts

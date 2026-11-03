@@ -18,6 +18,7 @@ from emporio.correios import (
 from emporio.market import ExactMatchMarketService, ExternalOffer, FakeExternalOfferProvider
 from emporio.mcp import MCPAdapter
 from emporio.order import AuthorizedPrincipal
+from emporio.simulators import MockCorreiosTracking, MockWhatsAppChannel, mock_whatsapp_config
 from emporio.tools import ToolRegistry, ToolSpec
 from emporio.whatsapp import WhatsAppConfig, WhatsAppVerificationError, WhatsAppWebhookAdapter
 
@@ -312,3 +313,97 @@ def test_disabled_correios_never_calls_provider(monkeypatch):
     with pytest.raises(CorreiosUnavailable, match="disabled"):
         CorreiosHttpAdapter(CorreiosConfig()).track("AB123456789BR")
     assert not called
+
+
+def test_mock_correios_returns_deterministic_local_data_without_network():
+    result = MockCorreiosTracking().track("AB123456789BR")
+    assert result.status == "Objeto em tr\u00e2nsito"
+    assert result.source == "Mock Correios"
+    assert "no Correios request" in result.provenance
+    assert result.observed_at.isoformat() == "2026-11-03T12:00:00+00:00"
+
+
+def test_mock_whatsapp_generates_signed_payload_and_deduplicates():
+    class Conversation:
+        def __init__(self):
+            self.calls = []
+
+        def respond(self, text, **kwargs):
+            self.calls.append(text)
+            return "mock-response"
+
+    conversation = Conversation()
+    adapter = WhatsAppWebhookAdapter(mock_whatsapp_config())
+    channel = MockWhatsAppChannel(adapter)
+    first = channel.deliver(conversation, text="mensagem simulada")
+    second = channel.deliver(conversation, text="mensagem simulada")
+    assert first.accepted and not first.duplicate
+    assert second.accepted and second.duplicate
+    assert first.message is not None and first.message.text == "mensagem simulada"
+    assert conversation.calls == ["mensagem simulada"]
+
+
+def test_mock_whatsapp_requires_no_meta_credentials():
+    config = mock_whatsapp_config()
+    assert config.access_token is None
+    assert config.phone_number_id is None
+    assert config.api_base_url is None
+
+
+def test_mock_whatsapp_rejects_real_provider_configuration():
+    config = WhatsAppConfig(
+        enabled=True,
+        app_secret="real-secret-placeholder",
+        access_token="real-token-placeholder",
+    )
+    with pytest.raises(ValueError, match="mock-only"):
+        MockWhatsAppChannel(WhatsAppWebhookAdapter(config))
+
+
+def test_mock_whatsapp_deduplicates_across_adapter_restart(tmp_path):
+    class Conversation:
+        def __init__(self):
+            self.calls = 0
+
+        def respond(self, text, **kwargs):
+            self.calls += 1
+            return text
+
+    path = str(tmp_path / "mock-whatsapp.db")
+    first_conversation = Conversation()
+    first = MockWhatsAppChannel(
+        WhatsAppWebhookAdapter(mock_whatsapp_config(idempotency_db_path=path))
+    )
+    assert not first.deliver(first_conversation, message_id="restart-1").duplicate
+    second_conversation = Conversation()
+    second = MockWhatsAppChannel(
+        WhatsAppWebhookAdapter(mock_whatsapp_config(idempotency_db_path=path))
+    )
+    assert second.deliver(second_conversation, message_id="restart-1").duplicate
+    assert first_conversation.calls == 1 and second_conversation.calls == 0
+
+
+def test_mock_correios_is_network_free_and_preserves_authorization(monkeypatch):
+    def unexpected_urlopen(*args, **kwargs):
+        raise AssertionError("mock Correios must not call urlopen")
+
+    monkeypatch.setattr("emporio.correios.urlopen", unexpected_urlopen)
+
+    class Orders:
+        def get_status(self, reference, principal):
+            return "snapshot" if isinstance(principal, AuthorizedPrincipal) else None
+
+        def get_tracking_code(self, reference, principal):
+            return "AB123456789BR" if isinstance(principal, AuthorizedPrincipal) else None
+
+    service = AuthorizedCorreiosTrackingService(Orders(), MockCorreiosTracking())
+    assert service.lookup("1", None) is None
+    result = service.lookup("1", AuthorizedPrincipal(1))
+    assert result is not None and result.live is not None
+    assert result.live.source == "Mock Correios"
+
+
+def test_mock_whatsapp_rejects_empty_generated_fields():
+    channel = MockWhatsAppChannel(WhatsAppWebhookAdapter(mock_whatsapp_config()))
+    with pytest.raises(ValueError, match="non-empty"):
+        channel.deliver(lambda text: text, text="")
