@@ -19,6 +19,7 @@ services:
       # EMPORIO_POLICY_EMBEDDING_MODEL: embeddinggemma
       # EMPORIO_POLICY_EMBEDDING_TIMEOUT: "10"
       # EMPORIO_POLICY_VECTOR_INDEX: /data/policy-index.json
+      # EMPORIO_POLICY_SOURCE: /policies/políticas_da_loja.pdf
       # Optional WhatsApp primary remote channel; leave unset for offline P0.
       # EMPORIO_WHATSAPP_VERIFY_TOKEN: set-out-of-band
       # EMPORIO_WHATSAPP_ACCESS_TOKEN: set-out-of-band

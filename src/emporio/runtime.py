@@ -10,10 +10,10 @@ from .config import database_path
 from .conversation import ConversationService
 from .dev_console import DevConsoleApplication, serve
 from .llm import LLMFactory
+from .policy_runtime import runtime_llm_and_tools
 from .session import utc_now
 from .session_service import SessionService
 from .session_sqlite import SQLiteSessionRepository
-from .tools import ToolRegistry
 
 
 def main() -> None:
@@ -26,8 +26,7 @@ def main() -> None:
     repository = SQLiteSessionRepository.connect(database_path())
     repository.purge_expired(utc_now())
     sessions = SessionService(repository)
-    llm = LLMFactory.create()
-    tools = ToolRegistry()
+    llm, tools, _policy = runtime_llm_and_tools(LLMFactory.create())
     assistant = ConversationService(sessions, llm, tools)
     print(f"READY emporio storage db={database_path()}", flush=True)
     if args.check:

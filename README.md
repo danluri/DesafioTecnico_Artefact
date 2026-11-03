@@ -43,6 +43,16 @@ With Ollama running locally, install the configured model once with
 This mode is local-only when pointed at Ollama in Docker; no hosted embedding API or paid
 provider is required. The base image does not install a heavyweight vector database.
 
+To make conversation answers policy-grounded, configure the policy PDF explicitly:
+
+```text
+EMPORIO_POLICY_SOURCE=E:\\...\\data\\políticas_da_loja.pdf
+```
+
+When this variable is set, every LLM turn receives bounded RAG evidence from the policy and
+the read-only `answer_policy` tool is registered. Without sufficient evidence, the assistant is
+instructed to ask the store team for confirmation instead of inventing a rule.
+
 ## Docker
 
 Run `docker compose up --build`. This is a storage-ready P0 container: it initializes SQLite at `/data/emporio.db`, wires `LLMFactory`, `ToolRegistry`, `SessionService`, and `ConversationService`, runs an offline assistant readiness conversation, reports `READY`, and remains running with the named `emporio-data` volume mounted. The interactive HTTP console is development-only and requires the explicit command below. The default principal-binding HMAC secret is development-only; set `EMPORIO_PRINCIPAL_HMAC_SECRET` to an explicit deployment secret.

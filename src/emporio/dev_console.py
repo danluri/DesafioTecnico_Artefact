@@ -13,10 +13,10 @@ from typing import Any
 from .config import database_path
 from .conversation import ConversationService
 from .llm import LLMFactory
+from .policy_runtime import runtime_llm_and_tools
 from .session_service import SessionService
 from .session_sqlite import SQLiteSessionRepository
 from .simulators import MockWhatsAppChannel, mock_whatsapp_config
-from .tools import ToolRegistry
 from .whatsapp import WhatsAppWebhookAdapter, WhatsAppVerificationError
 
 MAX_BODY_BYTES = 64 * 1024
@@ -158,8 +158,9 @@ class DevConsoleApplication:
 
 def create_default_application() -> DevConsoleApplication:
     repository = SQLiteSessionRepository.connect(database_path())
+    llm, tools, _policy = runtime_llm_and_tools(LLMFactory.create())
     return DevConsoleApplication(
-        ConversationService(SessionService(repository), LLMFactory.create(), ToolRegistry())
+        ConversationService(SessionService(repository), llm, tools)
     )
 
 
