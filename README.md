@@ -110,7 +110,7 @@ Os testes rodam 100% offline, com o `FakeLLM` e fixtures sintéticas, sem precis
 O agente é um laço de *tool calling* limitado, implementado em `ConversationService`:
 
 1. **Roteamento** (`query_routing.py` e `policy_runtime.py`) identifica os tópicos da mensagem (política, produto, pagamento, pedido) e decide quais ferramentas oferecer ao modelo e quais trechos do manual recuperar. Quando a intenção é clara (por exemplo, "pagamento do SN-100"), o plano de ferramentas é montado antes do LLM, que só redige a resposta final.
-2. **Ferramentas** somente leitura, em uma lista permitida (`tools.py`): `search_catalog`, `calculate_payment`, `order_status` e `answer_policy`. Os argumentos são validados contra schema, e o número de rodadas é limitado.
+2. **Ferramentas** somente leitura, em uma lista permitida (`tools.py`): `search_catalog`, `product_detail`, `calculate_payment`, `calculate_combinations` (PIX + cartão), `analyze_shipping`, `answer_policy` e `order_status`. Os argumentos são validados contra schema, e o número de rodadas é limitado.
 3. **Validação determinística da saída:** valores de cotação e planos de parcelamento citados pelo LLM são conferidos contra o resultado da calculadora, e há guardas para condições de política conhecidas (por exemplo, recolocar "compras online" se o modelo omitir essa condição no direito de arrependimento). Se o provedor falha ou estoura o tempo, a resposta usa apenas os fatos verificados e é marcada como `partial`.
 
 **Por que não LangChain/LlamaIndex/LangGraph:** o domínio é pequeno (seis tabelas e um PDF de oito páginas), e o que mais importa aqui é **controle**: quais ferramentas existem, quantas rodadas são permitidas, o que é registrado e quais números chegam ao cliente. Um laço próprio (`conversation.py`, cerca de 340 linhas) torna esse controle explícito e testável sem depender da API de um framework.
@@ -119,8 +119,17 @@ O agente é um laço de *tool calling* limitado, implementado em `ConversationSe
 
 ### Modelo e provedor: Llama 3.1 8B via Ollama (local)
 
-- **Custo zero e sem chave de API:** quem avalia consegue rodar sem conta em provedor pago, e nenhum dado do desafio sai da máquina.
-- **Desvantagem assumida:** um modelo de 8B local erra mais e é lento. Por isso a arquitetura **não confia no LLM para números**: preços, estoque, parcelas, PIX e frete são calculados por serviços determinísticos com `Decimal`, e o LLM só os redige. Essa escolha foi o que tornou viável um modelo pequeno.
+O LLM usado no projeto é o **Llama 3.1 8B**, rodando localmente pelo Ollama. A escolha foi pragmática: não havia chave de API de um provedor pago disponível para o desafio.
+
+- **O que ganhamos:** custo zero, nenhuma conta ou chave necessária para quem avalia, e nenhum dado do desafio sai da máquina.
+- **O que isso prejudica:** um modelo de 8B rodando localmente é bem mais limitado que os modelos de ponta via API:
+  - **Latência alta:** de 40 s a 70 s por resposta com o modelo carregado, e cerca de 170 s na primeira chamada, em hardware sem GPU dedicada (medições em `DIAGNOSTICO_RUNTIME.md`). Isso não serve para atendimento real, em que o próprio manual pede resposta em até 5 minutos e o cliente espera segundos.
+  - **Janela de contexto pequena na prática:** o Ollama truncava entradas acima de cerca de 2.000 tokens, o que obrigou a condensar o prompt e cortar o histórico enviado a cada turno.
+  - **Erros de raciocínio e de redação:** por exemplo, descrever um item de R$ 999,00 como "acima de R$ 1.000", omitir condições de uma política ou ignorar uma ferramenta oferecida.
+  - **Chamada de ferramentas pouco confiável:** só o `llama3.1` foi validado com *tool calling*. Outros modelos locais rodam sem ferramentas, a menos que sejam habilitados explicitamente.
+  - **Qualidade de português e de tom** inferior à de modelos maiores.
+- **Como compensamos:** a arquitetura **não confia no LLM para fatos nem números**. Preços, estoque, situação dos produtos, alternativas, promoções, parcelas, PIX e frete vêm de serviços determinísticos com `Decimal`, e o roteamento e os planos de ferramentas são montados em código antes do modelo. Validações conferem a resposta final. O LLM fica responsável principalmente pela redação, e foi isso que tornou viável usar um modelo pequeno.
+- **Recomendação para produção:** trocar por um modelo via API (Claude, GPT etc.), o que, pelo padrão Factory descrito abaixo, exige só um novo adaptador.
 - **Outro modelo no Ollama** (por exemplo, `qwen2.5`): basta trocar `EMPORIO_LLAMA_MODEL`. O `LocalLlamaLLM` declara `tool_calling` para modelos `llama3.1*` (validados com ferramentas); para outros modelos com suporte a ferramentas, defina `EMPORIO_LLAMA_ENABLE_TOOLS=true`.
 - **Outro provedor** (Claude, GPT etc.): criar uma classe que implemente `LLMPort.complete()`, declarar suas `capabilities` e chamar `LLMFactory.register("nome", Classe)`. O factory, o orquestrador, as ferramentas e as validações não mudam.
 
@@ -144,6 +153,18 @@ Sessões de conversa ficam em SQLite com expiração. Isso permite perguntas de 
 ### Interface
 
 Um console HTTP local (`dev_console.py`, apenas biblioteca padrão) com uma página de chat e o endpoint `POST /api/messages`. Foi escolhido em vez de uma CLI pura para exibir, ao lado da resposta, a tabela de produtos e o rastreamento de cada etapa (roteamento, ferramentas, trechos recuperados, latência). Isso ajuda a avaliar *por que* o agente respondeu o que respondeu. É uma interface de desenvolvimento, sem autenticação de produção.
+
+### Situações especiais do manual (seções 7.1 e 7.3)
+
+As regras abaixo são aplicadas em código, com os fatos vindos do snapshot. A orientação do manual vai junto no resultado da ferramenta, para o LLM só redigir:
+
+| Situação | Comportamento |
+|---|---|
+| **Produto fora de estoque** (ativo, estoque 0) | Uma busca pelo nome não diz "não encontrei": retorna o produto marcado como temporariamente indisponível e até 3 **alternativas disponíveis** da mesma categoria, com preço mais próximo. |
+| **Produto descontinuado** (mesmo com estoque no snapshot) | Informado como fora do catálogo, com modelos equivalentes disponíveis. |
+| **Produto "em breve"** (`coming_soon`) | Informado como ainda não disponível para compra. |
+| **Promoção vencida** | O catálogo e a cotação trazem as promoções inativas do produto marcadas como vencidas, com o preço atual. O desconto nunca é aplicado nem prometido. |
+| **Fora do expediente** | A primeira resposta da sessão fora do horário da seção 2 (seg. a sex. 9h–18h, sáb. 9h–13h, horário de Campo Grande) ganha um aviso determinístico com **quando a equipe retorna** ("amanhã, às 09:00", "na segunda-feira, às 09:00"). Pode ser desligado com `EMPORIO_BUSINESS_HOURS_NOTICE=false`. |
 
 ### Tratamento dos dados
 
@@ -179,12 +200,10 @@ As conversas registradas estão em [`docs/exemplos-atendimento.md`](docs/exemplo
 
 **Limitações**
 
-- **Latência e qualidade do modelo local:** de 40 s a 70 s por resposta com o modelo carregado, e cerca de 170 s na primeira chamada. Em um teste, o modelo descreveu um item de R$ 999,00 como "acima de R$ 1.000", embora a ferramenta tivesse filtrado corretamente. As validações cobrem preços e condições conhecidas, não todo comentário livre do modelo.
+- **Limitações do Llama local** (detalhadas em [Modelo e provedor](#modelo-e-provedor-llama-31-8b-via-ollama-local)): latência de 40 s a 170 s por resposta, contexto efetivo pequeno, erros de redação e chamada de ferramentas menos confiável. As validações cobrem preços e condições conhecidas, não todo comentário livre do modelo. É a principal limitação do protótipo.
 - **Estoque é snapshot,** não integração em tempo real.
-- **Políticas do manual ainda não automatizadas:**
-  - sugestão automática de alternativas quando o produto está sem estoque (seção 7.3);
-  - mensagem dedicada a produto descontinuado, com sucessores (seção 7.3);
-  - aviso de horário de retorno fora do expediente (seção 7.1).
+- **Feriados não são considerados** no aviso de fora do expediente: o manual não lista as datas, então um feriado é tratado como dia normal.
+- **Alternativas para produtos indisponíveis** são escolhidas por categoria e preço próximo, sem considerar características (nylon/aço, elétrico etc.).
 - **Frete fora de Campo Grande** é simulado: o snapshot não tem peso nem dimensões, então o agente pede esses dados em vez de cotar.
 - **Perguntas que misturam vários assuntos** de política podem recuperar trechos insuficientes.
 - WhatsApp e Correios funcionam apenas com simuladores; nenhuma mensagem ou cobrança real é feita.
@@ -195,7 +214,7 @@ A lista técnica detalhada está em [`_bmad-output/implementation-artifacts/defe
 
 1. Testar um modelo maior via API (ou um modelo local com GPU) e comparar qualidade e latência com um conjunto fixo de perguntas de avaliação.
 2. Criar uma suíte de avaliação ponta a ponta (perguntas e respostas esperadas, com LLM-as-judge e checagens determinísticas) rodando a cada mudança de prompt.
-3. Implementar as três políticas da seção 7 listadas acima.
+3. Incluir o calendário de feriados no aviso de expediente e usar as especificações dos produtos para escolher alternativas mais parecidas.
 4. Integrar estoque em tempo real e o canal de WhatsApp real com credenciais da loja.
 5. Fazer streaming de resposta no console para reduzir a latência percebida.
 
@@ -203,11 +222,17 @@ A lista técnica detalhada está em [`_bmad-output/implementation-artifacts/defe
 
 ## Uso de assistentes de código
 
-O projeto foi construído com assistentes de IA dentro de um fluxo de especificação antes do código:
+O projeto seguiu três etapas, sempre com especificação antes do código:
+
+1. **Entender a regra de negócio e montar roadmaps.** O primeiro passo foi entender toda a regra de negócio do enunciado e do manual de políticas (atendimento, catálogo, pagamentos, trocas, frete, promoções, privacidade) e organizá-la em roadmaps do que o agente precisava fazer.
+2. **Refinar os roadmaps com o framework BMAD.** Com os roadmaps prontos, usamos o BMAD Method para transformá-los em PRD, arquitetura, épicos e especificações por história, com revisões adversariais em cada etapa (detalhes abaixo).
+3. **Implementar seguindo boas práticas e as instruções do projeto.** A implementação seguiu as instruções do projeto e boas práticas de desenvolvimento: entregas incrementais por história (visíveis no histórico de commits), testes automatizados para cada regra, nenhum segredo no código, queries parametrizadas, dados pessoais fora de logs e decisões registradas.
+
+Ferramentas usadas em cada etapa:
 
 - **BMAD Method** (pastas `.agents/`, `_bmad/` e `_bmad-output/`): fluxo com agentes por papel (analista, arquiteto, PM, desenvolvedor, revisor). A partir do enunciado e do manual, gerou o PRD, a arquitetura, os épicos e uma especificação por história (`_bmad-output/implementation-artifacts/spec-*.md`). Cada artefato passou por revisões adversariais e de edge cases (`review-*.md`) antes da implementação. O que ficou fora do escopo foi registrado em `deferred-work.md`, em vez de ser descartado.
 - **Codex:** apoio à leitura dos documentos, à implementação história por história, à depuração (o `DIAGNOSTICO_RUNTIME.md` registra uma dessas investigações com medições reais) e aos testes.
-- **Claude Code:** revisão final do que faltava para a entrega frente ao enunciado e ao manual, e reorganização deste README e dos exemplos.
+- **Claude Code:** revisão final do que faltava para a entrega frente ao enunciado e ao manual. A partir dela vieram a refatoração do factory de LLM (registro de provedores e capacidades), a implementação das situações especiais das seções 7.1 e 7.3 do manual e a reorganização deste README.
 
 As decisões de negócio e de escopo foram tomadas por mim. O código gerado foi revisado e coberto por testes automatizados, além de testes manuais no console com o modelo real. Os commits seguem a progressão das histórias.
 
