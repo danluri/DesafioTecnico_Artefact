@@ -212,6 +212,10 @@ O script [`scripts/gravar-exemplos.ps1`](scripts/gravar-exemplos.ps1) envia cinc
 - **Estoque é snapshot,** não integração em tempo real.
 - **Feriados não são considerados** no aviso de fora do expediente: o manual não lista as datas, então um feriado é tratado como dia normal.
 - **Alternativas para produtos indisponíveis** são escolhidas por categoria e preço próximo, sem considerar características (nylon/aço, elétrico etc.).
+- **Observado nas conversas gravadas** ([exemplos](docs/exemplos-atendimento.md)):
+  - uma resposta estourou o timeout de 180 s do modelo local (o agente devolveu uma falha controlada, sem inventar valores);
+  - o modelo generalizou "até 12 parcelas" em um comentário livre, sem consultar a calculadora;
+  - uma pergunta alheia à loja ("capital da França") foi respondida antes do redirecionamento, porque só os acessórios têm uma guarda de escopo determinística.
 - **Frete fora de Campo Grande** é simulado: o snapshot não tem peso nem dimensões, então o agente pede esses dados em vez de cotar.
 - **Perguntas que misturam vários assuntos** de política podem recuperar trechos insuficientes.
 - WhatsApp e Correios funcionam apenas com simuladores; nenhuma mensagem ou cobrança real é feita.
@@ -225,6 +229,7 @@ A lista técnica detalhada está em [`_bmad-output/implementation-artifacts/defe
 3. Incluir o calendário de feriados no aviso de expediente e usar as especificações dos produtos para escolher alternativas mais parecidas.
 4. Integrar estoque em tempo real e o canal de WhatsApp real com credenciais da loja.
 5. Fazer streaming de resposta no console para reduzir a latência percebida.
+6. Criar uma guarda de escopo determinística para perguntas alheias à loja, como a que já existe para acessórios, e validar menções a parcelamento no texto livre contra a calculadora.
 
 ---
 
