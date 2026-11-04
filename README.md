@@ -1,231 +1,281 @@
-# Emporio da Musica
+# Empório da Música — Agente de Atendimento
 
-Assistente local para atendimento de uma loja de instrumentos musicais. O projeto combina politicas da loja, catalogo de produtos, pagamentos, pedidos, rastreamento e observabilidade.
+Protótipo em Python de um agente de atendimento por mensagens de texto para a Empório da Música, uma loja fictícia de instrumentos musicais em Campo Grande/MS. O agente conversa no tom da loja e escolhe, a cada mensagem, se precisa **consultar dados** (catálogo, preços, estoque, promoções, pedidos) ou **consultar políticas** (horários, endereço, trocas, frete, pagamento, garantia). Ele também recusa com educação pedidos fora do escopo, como acessórios.
 
-## Decisões e uso de IA
+- [Como rodar](#como-rodar)
+- [Decisões técnicas](#decisões-técnicas)
+- [Suposições sobre o enunciado e o manual](#suposições-sobre-o-enunciado-e-o-manual)
+- [Exemplos de interação](#exemplos-de-interação)
+- [Limitações conhecidas e próximos passos](#limitações-conhecidas-e-próximos-passos)
+- [Uso de assistentes de código](#uso-de-assistentes-de-código)
+- [Referência: observabilidade, Docker e simulações](#referência-observabilidade-docker-e-simulações)
 
-O projeto usa Python e componentes próprios, sem framework de agentes: uma interface `LLMPort` permite trocar o provedor, enquanto o `ConversationService` limita rodadas e executa ferramentas por uma lista permitida. SQLite guarda sessões e snapshots, com consultas parametrizadas para preço, estoque e pedidos. Políticas são consultadas por recuperação lexical de trechos do PDF com página e fonte; opcionalmente, embeddings locais fazem busca semântica. A LLM recebe o contexto recuperado e orientações de persona, precisão e privacidade. Os cálculos monetários ficam em serviços determinísticos com `Decimal`, evitando confiar na geração de texto para definir valores.
+---
 
-O Ollama com Llama foi escolhido para testar localmente sem chave de API; `FakeLLM` permite verificações offline reproduzíveis. As decisões trocam atualizações operacionais em tempo real por um snapshot importado e exigem atenção ao tempo de inferência local. O console HTTP é uma interface de desenvolvimento, não uma aplicação autenticada de produção.
+## Como rodar
 
-Foi usado o Codex como assistente de código para apoiar a leitura dos documentos, implementação, depuração, testes e documentação. As decisões de negócio e aprovação do escopo foram discutidas com o responsável pelo projeto; testes automatizados e verificações manuais complementam a revisão do código gerado.
+### 1. Pré-requisitos
 
-As conversas e consultas registradas para avaliação estão em [exemplos de atendimento](docs/exemplos-atendimento.md). Antes da entrega, registre novas conversas reais do console se desejar demonstrar o modelo local e revise os arquivos que serão publicados: o manual se identifica como documento interno, e os dados operacionais podem conter dados pessoais.
+| Item | Observação |
+|---|---|
+| Python 3.13+ | linguagem principal |
+| [uv](https://docs.astral.sh/uv/) | gerencia o ambiente virtual e as dependências |
+| [Ollama](https://ollama.com/) | provedor do LLM local; necessário para conversar com o agente de verdade |
+| Dados do desafio | a pasta `data/` entregue pela Artefact (CSVs + `políticas_da_loja.pdf`) |
 
-## Limitações e evolução
+Os dados do desafio **não estão versionados**: o manual se identifica como "documento interno", e os CSVs contêm dados pessoais fictícios de clientes. Mantenha a pasta onde preferir e aponte para ela com a variável `$dados` abaixo.
 
-O estoque é um snapshot, não uma integração em tempo real. Valores e prazos externos de frete são simulações e não substituem uma cotação. WhatsApp e Correios operam em modo simulado por padrão; pagamentos e despachos de teste não são reais. As regras de horário e prazo máximo de atendimento ainda não são garantidas automaticamente. Regras de devolução dependem de dados e análise de elegibilidade. A resposta da LLM pode falhar ou demorar, e a consulta RAG deve ser conferida para perguntas que combinem vários assuntos. Futuras melhorias incluem integrar canais e transportadoras mediante credenciais, imagens dos produtos, análise de reclamações e monitoramento dos prazos. Limitações específicas e pendências de implementação estão em `_bmad-output/implementation-artifacts/deferred-work.md`.
+### 2. Instalação
 
-O manual deixa em aberto o frete de exatamente R$ 500,00; a decisão adotada para Campo Grande é cobrar R$ 35,00 até R$ 500,00, inclusive, e oferecer frete grátis somente acima desse valor. O manual também apresenta números diferentes para WhatsApp e inconsistência nas regras gerais de parcela mínima; a aplicação deve pedir confirmação quando não houver evidência suficiente.
+```powershell
+git clone https://github.com/danluri/DesafioTecnico_Artefact.git
+cd DesafioTecnico_Artefact
+uv sync
 
-## Visao geral
+ollama pull llama3.1
+```
 
-O console de desenvolvimento mostra a resposta do assistente e uma tabela de produtos com modelo, preco em BRL e quantidade em estoque. Os valores vem diretamente do resultado da ferramenta de catalogo, e nao da interpretacao do texto do LLM. A tabela tambem mostra a quantidade de resultados e a data do snapshot. O JSON bruto fica disponivel em uma secao de diagnostico expansivel.
+No Windows, use `$env:PYTHONIOENCODING = "utf-8"` para os acentos aparecerem corretamente no terminal.
 
-Perguntas de clientes sao direcionadas para a recuperacao de politicas da loja (endereco, horario, contato, frete, trocas, garantia e privacidade) ou para ferramentas operacionais de catalogo (modelos, precos e estoque). Sem evidencia suficiente, o assistente orienta a confirmacao com a equipe da loja em vez de inventar uma regra.
+### 3. Importar o catálogo (CSV → SQLite)
 
-## Rastreamento e observabilidade
+O agente não lê os CSVs a cada pergunta. Eles são importados uma vez para um snapshot SQLite, e as ferramentas consultam esse snapshot.
 
-O console possui a timeline Rastreamento desta mensagem e a area Historico e metricas, com traces recentes e estatisticas de latencia. As respostas da API incluem trace_id e trace. Os eventos registram duracoes, tokens, origem das politicas, snapshot do catalogo, erros e estado da persistencia, sem armazenar mensagens completas, prompts ou respostas geradas.
+```powershell
+$dados = "C:\caminho\para\Desafio Técnico AI Engineer 2026\data"
+$env:PYTHONPATH = "src"
+New-Item -ItemType Directory -Force data | Out-Null
 
-Padroes:
+uv run python -m emporio.cli --catalog-db data/catalog.db --catalog-action search --category "Violões" --maximum-budget 1000 `
+  --products-csv   "$dados\desafio_tecnico_ai_eng - products.csv" `
+  --categories-csv "$dados\desafio_tecnico_ai_eng - categories.csv" `
+  --promotions-csv "$dados\desafio_tecnico_ai_eng - promotions.csv" `
+  --customers-csv  "$dados\desafio_tecnico_ai_eng - customers.csv" `
+  --orders-csv     "$dados\desafio_tecnico_ai_eng - orders.csv" `
+  --order-items-csv "$dados\desafio_tecnico_ai_eng - order_items.csv"
+```
 
-~~~text
-EMPORIO_TRACE_ENABLED=true
-EMPORIO_TRACE_DB=data/observability.db
-EMPORIO_TRACE_RETENTION_DAYS=7
-EMPORIO_RUNTIME_LOG=data/emporio-runtime.log
-~~~
+A saída já mostra os violões até R$ 1.000 do snapshot (12 resultados). Depois disso, a CLI consulta a base sem precisar dos CSVs:
 
-Endpoints locais:
+```powershell
+uv run python -m emporio.cli --catalog-db data/catalog.db --catalog-action detail --product "Takamine GD20 Dreadnought Natural"
+uv run python -m emporio.cli --policy-source "$dados\políticas_da_loja.pdf" --query "Qual o endereço da loja?"
+```
 
-- GET /api/traces: resumos dos traces recentes.
-- GET /api/traces/<trace_id>: timeline sanitizada completa.
-- GET /api/traces/by-message/<message_id>: consulta do trace sem guardar o ID bruto.
-- GET /api/metrics: metricas de resultados e latencia.
+### 4. Conversar com o agente (console local + Llama)
 
-## Politicas, catalogo e pagamentos
-
-A aplicacao P0 offline usa SQLite e nao exige credenciais externas. A cobertura de politicas e deterministica e offline por padrao.
-
-ShippingService aplica a regra de R$ 35/gratis de Campo Grande e retorna opcoes simuladas de Correios PAC/SEDEX e Jadlog nos demais casos. Dados incompletos ou pacotes acima do limite produzem resposta explicita, sem cotacao inventada.
-
-PaymentService.calculate_combinations suporta PIX e cartao somente acima de R$ 2.000,00 e nunca acumula desconto de PIX com promocao. PostSaleService persiste reclamacoes autorizadas e nao retorna dados privados de referencias nao autorizadas.
-
-## Provedores de LLM
-
-O padrao e o FakeLLM, deterministico e offline. Para usar um endpoint local compativel com Llama/Ollama:
-
-~~~text
-EMPORIO_LLM_PROVIDER=local-llama
-EMPORIO_LLAMA_BASE_URL=http://host.docker.internal:11434
-EMPORIO_LLAMA_MODEL=llama3.1:latest
-EMPORIO_LLAMA_TIMEOUT=180
-EMPORIO_LLAMA_MAX_TOKENS=512
-EMPORIO_CATALOG_DB_PATH=data/catalog.db
-~~~
-
-Se o endpoint estiver indisponivel, a requisicao informa a limitacao do provedor. EMPORIO_LLM_PROVIDER=fake continua totalmente offline e deterministico.
-
-## Recuperacao semantica opcional
-
-O modo semantico local usa embeddings compativeis com Ollama e volta para a busca lexical quando necessario:
-
-~~~text
-EMPORIO_POLICY_SEMANTIC_ENABLED=true
-EMPORIO_POLICY_EMBEDDING_BASE_URL=http://host.docker.internal:11434
-EMPORIO_POLICY_EMBEDDING_MODEL=embeddinggemma
-EMPORIO_POLICY_EMBEDDING_TIMEOUT=10
-EMPORIO_POLICY_VECTOR_INDEX=/data/policy-index.json
-~~~
-
-Instale o modelo com:
-
-~~~text
-ollama pull embeddinggemma
-~~~
-
-Para habilitar respostas fundamentadas nas politicas, configure:
-
-~~~text
-EMPORIO_POLICY_SOURCE=E:\\...\\data\\politicas_da_loja.pdf
-~~~
-
-Quando definida, cada turno recebe evidencias RAG limitadas e a ferramenta somente leitura answer_policy e registrada. Sem evidencia suficiente, o assistente pede confirmacao da equipe.
-
-## Docker
-
-Execute:
-
-~~~text
-docker compose up --build
-~~~
-
-O container P0 inicializa SQLite em /data/emporio.db, conecta os servicos principais, executa uma conversa de prontidao offline, informa READY e usa o volume nomeado emporio-data.
-
-Para verificar volumes de forma isolada:
-
-~~~powershell
-$env:COMPOSE_PROJECT_NAME = "emporio-story-31-verify"
-docker-compose -p $env:COMPOSE_PROJECT_NAME config
-docker-compose -p $env:COMPOSE_PROJECT_NAME up --build -d
-docker-compose -p $env:COMPOSE_PROJECT_NAME ps
-~~~
-
-Depois, limpe somente os recursos sinteticos:
-
-~~~powershell
-docker-compose -p $env:COMPOSE_PROJECT_NAME down -v
-~~~
-
-## Verificacao
-
-O comando principal de verificacao offline e:
-
-~~~text
-uv run pytest -q
-~~~
-
-Verificacoes complementares:
-
-~~~text
-uv run --with ruff ruff check src tests
-python -m compileall -q src tests
-docker compose config
-docker compose build
-~~~
-
-FakeLLM e o unico modo obrigatorio. local-llama, WhatsApp, MCP, comparacao de mercado e rastreamento live dos Correios sao extensoes opcionais.
-
-## Console local de desenvolvimento
-
-O console do navegador vem desativado. Para executa-lo fora do Docker com FakeLLM:
-
-~~~powershell
+```powershell
+$env:PYTHONPATH = "src"
+$env:EMPORIO_LLM_PROVIDER = "local-llama"
+$env:EMPORIO_LLAMA_BASE_URL = "http://127.0.0.1:11434"
+$env:EMPORIO_LLAMA_MODEL = "llama3.1:latest"
+$env:EMPORIO_LLAMA_TIMEOUT = "180"
+$env:EMPORIO_LLAMA_MAX_TOKENS = "512"
+$env:EMPORIO_CATALOG_DB_PATH = "$PWD\data\catalog.db"
+$env:EMPORIO_POLICY_SOURCE = "$dados\políticas_da_loja.pdf"
 $env:EMPORIO_DEV_CONSOLE_ENABLED = "true"
 $env:EMPORIO_DEV_CONSOLE_PORT = "8080"
-python -m emporio.runtime --dev-console
-~~~
 
-Abra http://127.0.0.1:8080. A pagina mantem o identificador da sessao, mostra resposta/provedor/resultado e permite observar a supressao de duplicatas. O endpoint e POST /api/messages; a saude e GET /health.
+uv run python -m emporio.runtime --dev-console
+```
 
-Para executar no Docker:
+Abra http://127.0.0.1:8080 e envie mensagens. O console mostra a resposta, uma tabela de produtos montada a partir do resultado da ferramenta (e não do texto do LLM) e a linha do tempo de rastreamento de cada mensagem. A mesma conversa pode ser feita pela API:
 
-~~~powershell
-docker compose run --rm -p 127.0.0.1:8080:8080 -e EMPORIO_DEV_CONSOLE_ENABLED=true -e EMPORIO_DEV_CONSOLE_PORT=8080 -e EMPORIO_DEV_CONSOLE_ALLOW_CONTAINER_BIND=true emporio python -m emporio.runtime --dev-console
-~~~
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/messages -ContentType "application/json; charset=utf-8" `
+  -Body '{"text": "Quanto custa o Takamine GD20?", "message_id": "m-001"}'
+```
 
-O exemplo acima inicia o console com FakeLLM e sem catálogo ou manual configurados. Para testar os dados do desafio dentro do volume Docker, primeiro construa a imagem e importe o snapshot a partir da pasta fornecida, na raiz do projeto:
+Para continuar a mesma conversa, reenvie o `session_id` devolvido na resposta.
+
+> **Latência:** com inferência local em CPU/GPU modesta, a primeira chamada (modelo "frio") levou cerca de 170 s. Com o modelo já carregado, as respostas levaram de 40 s a 70 s. Veja [`DIAGNOSTICO_RUNTIME.md`](DIAGNOSTICO_RUNTIME.md).
+
+**Sem Ollama:** o provedor padrão (`EMPORIO_LLM_PROVIDER=fake`) é um LLM falso e determinístico. Ele serve para os testes e para subir a aplicação offline, mas **não conversa** e responde a maioria das mensagens com uma falha controlada. Para avaliar o agente, use o Ollama.
+
+### 5. Testes
+
+```powershell
+uv run --with pytest pytest -q
+uv run --with ruff ruff check src tests
+```
+
+Os testes rodam 100% offline, com o `FakeLLM` e fixtures sintéticas, sem precisar do Ollama nem dos dados do desafio.
+
+---
+
+## Decisões técnicas
+
+### Abordagem: function calling com orquestração própria (sem framework de agente)
+
+O agente é um laço de *tool calling* limitado, implementado em `ConversationService`:
+
+1. **Roteamento** (`query_routing.py` e `policy_runtime.py`) identifica os tópicos da mensagem (política, produto, pagamento, pedido) e decide quais ferramentas oferecer ao modelo e quais trechos do manual recuperar. Quando a intenção é clara (por exemplo, "pagamento do SN-100"), o plano de ferramentas é montado antes do LLM, que só redige a resposta final.
+2. **Ferramentas** somente leitura, em uma lista permitida (`tools.py`): `search_catalog`, `calculate_payment`, `order_status` e `answer_policy`. Os argumentos são validados contra schema, e o número de rodadas é limitado.
+3. **Validação determinística da saída:** valores de cotação e planos de parcelamento citados pelo LLM são conferidos contra o resultado da calculadora, e há guardas para condições de política conhecidas (por exemplo, recolocar "compras online" se o modelo omitir essa condição no direito de arrependimento). Se o provedor falha ou estoura o tempo, a resposta usa apenas os fatos verificados e é marcada como `partial`.
+
+**Por que não LangChain/LlamaIndex/LangGraph:** o domínio é pequeno (seis tabelas e um PDF de oito páginas), e o que mais importa aqui é **controle**: quais ferramentas existem, quantas rodadas são permitidas, o que é registrado e quais números chegam ao cliente. Um laço próprio (`conversation.py`, cerca de 340 linhas) torna esse controle explícito e testável sem depender da API de um framework.
+
+**Troca de provedor (padrão Factory + Port):** o resto do sistema conhece apenas a interface `LLMPort` (`llm.py`). `LLMFactory` é um factory baseado em registro: `create()` escolhe o construtor pela variável `EMPORIO_LLM_PROVIDER` (`fake` → `FakeLLM`; `local-llama` → `LocalLlamaLLM`, com import tardio), e provedores novos entram com `LLMFactory.register(nome, construtor)`, sem editar o factory. Cada adaptador declara o que suporta em `capabilities` (por exemplo, `tool_calling`), e o orquestrador decide com base nessa declaração, nunca no nome do provedor. Por fim, `PolicyGroundedLLM` envolve qualquer provedor (padrão Decorator) para injetar as evidências do manual e aplicar as validações.
+
+### Modelo e provedor: Llama 3.1 8B via Ollama (local)
+
+- **Custo zero e sem chave de API:** quem avalia consegue rodar sem conta em provedor pago, e nenhum dado do desafio sai da máquina.
+- **Desvantagem assumida:** um modelo de 8B local erra mais e é lento. Por isso a arquitetura **não confia no LLM para números**: preços, estoque, parcelas, PIX e frete são calculados por serviços determinísticos com `Decimal`, e o LLM só os redige. Essa escolha foi o que tornou viável um modelo pequeno.
+- **Outro modelo no Ollama** (por exemplo, `qwen2.5`): basta trocar `EMPORIO_LLAMA_MODEL`. O `LocalLlamaLLM` declara `tool_calling` para modelos `llama3.1*` (validados com ferramentas); para outros modelos com suporte a ferramentas, defina `EMPORIO_LLAMA_ENABLE_TOOLS=true`.
+- **Outro provedor** (Claude, GPT etc.): criar uma classe que implemente `LLMPort.complete()`, declarar suas `capabilities` e chamar `LLMFactory.register("nome", Classe)`. O factory, o orquestrador, as ferramentas e as validações não mudam.
+
+### Arquitetura de retrieval
+
+| Fonte | Estratégia | Motivo |
+|---|---|---|
+| CSVs (catálogo, promoções, pedidos) | Importação para **SQLite** e consultas **parametrizadas** por ferramentas | São dados estruturados: filtros exatos (categoria, orçamento, estoque) funcionam melhor com SQL do que com busca vetorial, e evitam que o LLM "invente" um produto. Não há agente de SQL livre (nenhum SQL gerado pelo modelo). |
+| `políticas_da_loja.pdf` | **RAG lexical** sobre trechos por página, com fonte e página; busca **semântica opcional** com embeddings locais (`embeddinggemma`) | Com 8 páginas, a busca lexical normalizada (acentos, sinônimos como CEP/endereço) já recupera o trecho certo de forma reproduzível e sem dependências. A busca semântica fica disponível para perguntas parafraseadas e volta para a lexical se falhar. |
+
+### Estratégia de prompt
+
+- **Prompt de sistema condensado:** contém a persona do manual (seção 7.1, "informal mas profissional, como um amigo que entende de música"), a regra "nunca informar preço, estoque ou prazo sem consultar o sistema", o escopo restrito a instrumentos musicais e as regras de privacidade.
+- **Contexto mínimo por turno:** só os trechos recuperados do manual e o resultado compacto das ferramentas (ID, nome, preço, estoque, data do snapshot). O histórico não relacionado é cortado. Isso foi necessário porque o Ollama truncava a entrada acima de cerca de 2.000 tokens (detalhes em `DIAGNOSTICO_RUNTIME.md`).
+- **Sem evidência, sem resposta:** quando a recuperação não encontra base, o agente orienta a confirmação com a equipe em vez de improvisar uma regra.
+
+### Persistência do histórico
+
+Sessões de conversa ficam em SQLite com expiração. Isso permite perguntas de acompanhamento ("e no PIX?", "e em 6x?") sem repetir o produto. A identidade do cliente para consultar pedidos vem do servidor, nunca do texto da mensagem: informar só um número de pedido não basta para ver dados de outra pessoa.
+
+### Interface
+
+Um console HTTP local (`dev_console.py`, apenas biblioteca padrão) com uma página de chat e o endpoint `POST /api/messages`. Foi escolhido em vez de uma CLI pura para exibir, ao lado da resposta, a tabela de produtos e o rastreamento de cada etapa (roteamento, ferramentas, trechos recuperados, latência). Isso ajuda a avaliar *por que* o agente respondeu o que respondeu. É uma interface de desenvolvimento, sem autenticação de produção.
+
+### Tratamento dos dados
+
+- A importação dos CSVs é **atômica**: um snapshot só substitui o anterior se todas as tabelas forem válidas.
+- Valores monetários em `Decimal`, status de produto (`active`, `discontinued`, `coming_soon`) validados, e especificações JSON dos produtos interpretadas.
+- Toda resposta de catálogo informa a **data do snapshot** e que não é estoque em tempo real.
+- Logs e traces registram identificadores, durações e origem das evidências, **sem** mensagens completas, prompts ou dados pessoais.
+
+---
+
+## Suposições sobre o enunciado e o manual
+
+O manual tem ambiguidades e divergências. As decisões adotadas:
+
+| Ponto | Decisão |
+|---|---|
+| Frete de exatamente R$ 500,00 em Campo Grande (o manual diz "acima de" e "abaixo de") | Cobra R$ 35,00 até R$ 500,00, inclusive; frete grátis só acima disso. |
+| Dois números de WhatsApp: (67) 3341-4444 (seção 1.2) e (67) 3321-4500 (seção 7) | Não há regra para escolher um deles: o agente responde com base no trecho recuperado. A divergência fica registrada aqui para a loja corrigir o manual. |
+| E-mail com acento no domínio na seção 1.2 (`contato@empóriodamusica.com.br`) e sem acento na capa (`contato@emporiodamusica.com.br`) | Provável erro de digitação no manual (domínios com acento são incomuns); registrado como divergência, sem tratamento específico no código. |
+| Parcela mínima: a tabela fala em R$ 100,00, mas a seção 3.1 define faixas (≤3x, 4–6x com R$ 80, 7–12x com R$ 100) | Usa as faixas da seção 3.1, que são mais específicas. |
+| Direito de arrependimento vale para compras **online** | O agente sempre explicita essa condição e pede pedido e data de recebimento para análise. |
+| "Consultar dados em tempo real" | Os CSVs são tratados como o "sistema" da loja, mas como snapshot importado; o agente sempre informa a data do snapshot. |
+
+---
+
+## Exemplos de interação
+
+As conversas registradas estão em [`docs/exemplos-atendimento.md`](docs/exemplos-atendimento.md).
+
+---
+
+## Limitações conhecidas e próximos passos
+
+**Limitações**
+
+- **Latência e qualidade do modelo local:** de 40 s a 70 s por resposta com o modelo carregado, e cerca de 170 s na primeira chamada. Em um teste, o modelo descreveu um item de R$ 999,00 como "acima de R$ 1.000", embora a ferramenta tivesse filtrado corretamente. As validações cobrem preços e condições conhecidas, não todo comentário livre do modelo.
+- **Estoque é snapshot,** não integração em tempo real.
+- **Políticas do manual ainda não automatizadas:**
+  - sugestão automática de alternativas quando o produto está sem estoque (seção 7.3);
+  - mensagem dedicada a produto descontinuado, com sucessores (seção 7.3);
+  - aviso de horário de retorno fora do expediente (seção 7.1).
+- **Frete fora de Campo Grande** é simulado: o snapshot não tem peso nem dimensões, então o agente pede esses dados em vez de cotar.
+- **Perguntas que misturam vários assuntos** de política podem recuperar trechos insuficientes.
+- WhatsApp e Correios funcionam apenas com simuladores; nenhuma mensagem ou cobrança real é feita.
+
+A lista técnica detalhada está em [`_bmad-output/implementation-artifacts/deferred-work.md`](_bmad-output/implementation-artifacts/deferred-work.md).
+
+**Com mais tempo**
+
+1. Testar um modelo maior via API (ou um modelo local com GPU) e comparar qualidade e latência com um conjunto fixo de perguntas de avaliação.
+2. Criar uma suíte de avaliação ponta a ponta (perguntas e respostas esperadas, com LLM-as-judge e checagens determinísticas) rodando a cada mudança de prompt.
+3. Implementar as três políticas da seção 7 listadas acima.
+4. Integrar estoque em tempo real e o canal de WhatsApp real com credenciais da loja.
+5. Fazer streaming de resposta no console para reduzir a latência percebida.
+
+---
+
+## Uso de assistentes de código
+
+O projeto foi construído com assistentes de IA dentro de um fluxo de especificação antes do código:
+
+- **BMAD Method** (pastas `.agents/`, `_bmad/` e `_bmad-output/`): fluxo com agentes por papel (analista, arquiteto, PM, desenvolvedor, revisor). A partir do enunciado e do manual, gerou o PRD, a arquitetura, os épicos e uma especificação por história (`_bmad-output/implementation-artifacts/spec-*.md`). Cada artefato passou por revisões adversariais e de edge cases (`review-*.md`) antes da implementação. O que ficou fora do escopo foi registrado em `deferred-work.md`, em vez de ser descartado.
+- **Codex:** apoio à leitura dos documentos, à implementação história por história, à depuração (o `DIAGNOSTICO_RUNTIME.md` registra uma dessas investigações com medições reais) e aos testes.
+- **Claude Code:** revisão final do que faltava para a entrega frente ao enunciado e ao manual, e reorganização deste README e dos exemplos.
+
+As decisões de negócio e de escopo foram tomadas por mim. O código gerado foi revisado e coberto por testes automatizados, além de testes manuais no console com o modelo real. Os commits seguem a progressão das histórias.
+
+---
+
+## Referência: observabilidade, Docker e simulações
+
+### Observabilidade
+
+Cada resposta da API inclui `trace_id` e `trace`, com duração por etapa, tokens, origem das políticas, data do snapshot, erros e estado da persistência. Nada disso guarda a mensagem completa nem o prompt.
+
+| Endpoint | Conteúdo |
+|---|---|
+| `GET /health` | saúde do console |
+| `GET /api/traces` | resumos dos traces recentes |
+| `GET /api/traces/<trace_id>` | timeline sanitizada completa |
+| `GET /api/metrics` | métricas de resultado e latência |
+
+Variáveis: `EMPORIO_TRACE_ENABLED` (padrão `true`), `EMPORIO_TRACE_DB` (`data/observability.db`), `EMPORIO_TRACE_RETENTION_DAYS` (`7`) e `EMPORIO_RUNTIME_LOG` (`data/emporio-runtime.log`).
+
+### Busca semântica opcional nas políticas
+
+```powershell
+ollama pull embeddinggemma
+$env:EMPORIO_POLICY_SEMANTIC_ENABLED = "true"
+$env:EMPORIO_POLICY_EMBEDDING_BASE_URL = "http://127.0.0.1:11434"
+$env:EMPORIO_POLICY_EMBEDDING_MODEL = "embeddinggemma"
+$env:EMPORIO_POLICY_VECTOR_INDEX = "data/policy-index.json"
+```
+
+### Docker
+
+```powershell
+docker compose up --build
+```
+
+Isso sobe o runtime com o `FakeLLM`, inicializa o SQLite no volume `emporio-data` e executa uma verificação de prontidão. Para o console com os dados do desafio e o Ollama do host:
 
 ```powershell
 docker compose build
-$dadosDesafio = (Resolve-Path '.\Desafio_Técnico_AI_Engineer_2026-20260616T150750Z-3-001\Desafio Técnico AI Engineer 2026\data').Path
-docker compose run --rm -v "${dadosDesafio}:/sources:ro" emporio python -m emporio.cli --catalog-db /data/catalog.db --catalog-action search --category 'Violões' --products-csv '/sources/desafio_tecnico_ai_eng - products.csv' --categories-csv '/sources/desafio_tecnico_ai_eng - categories.csv' --promotions-csv '/sources/desafio_tecnico_ai_eng - promotions.csv' --customers-csv '/sources/desafio_tecnico_ai_eng - customers.csv' --orders-csv '/sources/desafio_tecnico_ai_eng - orders.csv' --order-items-csv '/sources/desafio_tecnico_ai_eng - order_items.csv'
+docker compose run --rm -v "${dados}:/sources:ro" emporio python -m emporio.cli --catalog-db /data/catalog.db --catalog-action search --category "Violões" --products-csv "/sources/desafio_tecnico_ai_eng - products.csv" --categories-csv "/sources/desafio_tecnico_ai_eng - categories.csv" --promotions-csv "/sources/desafio_tecnico_ai_eng - promotions.csv" --customers-csv "/sources/desafio_tecnico_ai_eng - customers.csv" --orders-csv "/sources/desafio_tecnico_ai_eng - orders.csv" --order-items-csv "/sources/desafio_tecnico_ai_eng - order_items.csv"
+
+docker compose run --rm -p 127.0.0.1:8080:8080 -v "${dados}:/sources:ro" `
+  -e EMPORIO_DEV_CONSOLE_ENABLED=true -e EMPORIO_DEV_CONSOLE_PORT=8080 -e EMPORIO_DEV_CONSOLE_ALLOW_CONTAINER_BIND=true `
+  -e EMPORIO_CATALOG_DB_PATH=/data/catalog.db -e "EMPORIO_POLICY_SOURCE=/sources/políticas_da_loja.pdf" `
+  -e EMPORIO_LLM_PROVIDER=local-llama -e EMPORIO_LLAMA_BASE_URL=http://host.docker.internal:11434 `
+  -e EMPORIO_LLAMA_MODEL=llama3.1:latest -e EMPORIO_LLAMA_TIMEOUT=180 `
+  emporio python -m emporio.runtime --dev-console
 ```
 
-Com o Ollama ativo no Windows e o modelo instalado, inicie o console com o manual montado somente para leitura:
+O mapeamento `127.0.0.1:8080:8080` restringe o acesso ao computador local. A flag `ALLOW_CONTAINER_BIND` serve apenas para desenvolvimento.
 
-```powershell
-docker compose run --rm -p 127.0.0.1:8080:8080 -v "${dadosDesafio}:/sources:ro" -e EMPORIO_DEV_CONSOLE_ENABLED=true -e EMPORIO_DEV_CONSOLE_PORT=8080 -e EMPORIO_DEV_CONSOLE_ALLOW_CONTAINER_BIND=true -e EMPORIO_DEV_ORDER_SIMULATION_ENABLED=true -e EMPORIO_CATALOG_DB_PATH=/data/catalog.db -e 'EMPORIO_POLICY_SOURCE=/sources/políticas_da_loja.pdf' -e EMPORIO_LLM_PROVIDER=local-llama -e EMPORIO_LLAMA_BASE_URL=http://host.docker.internal:11434 -e EMPORIO_LLAMA_MODEL=llama3.1:latest -e EMPORIO_LLAMA_TIMEOUT=180 emporio python -m emporio.runtime --dev-console
-```
+### Pedido fictício e rastreio (simulação)
 
-O servidor precisa escutar nas interfaces do container para a porta publicada funcionar; o mapeamento `127.0.0.1:8080:8080` restringe o acesso pela porta ao computador local. A flag de bind deve ser usada somente em desenvolvimento.
-
-O console nunca chama a Meta nem envia mensagens reais de WhatsApp.
-
-### Criar pedido fictício e testar o rastreio
-
-Com o catálogo já importado, mantenha a configuração atual da LLM e das políticas e habilite a simulação no PowerShell, na raiz do projeto:
+Os CSVs não vinculam um cliente autenticado à conversa. Para demonstrar a consulta de status de pedido com segurança, o console tem um painel de simulação, desligado por padrão e bloqueado em produção:
 
 ```powershell
 $env:EMPORIO_DEV_ORDER_SIMULATION_ENABLED = "true"
 $env:EMPORIO_DEV_ORDER_DB = "$PWD\data\dev-orders.db"
-# Aponte para a base que já contém os produtos importados:
-$env:EMPORIO_CATALOG_DB_PATH = "$PWD\data\catalog.db"
-$env:EMPORIO_DEV_CONSOLE_ENABLED = "true"
-$env:EMPORIO_DEV_CONSOLE_PORT = "8080"
-python -m emporio.runtime --dev-console
 ```
 
-Se o servidor estiver rodando, pare com Ctrl+C antes de reiniciar. Abra `http://127.0.0.1:8080` e atualize com Ctrl+F5.
+1. No painel **Pedido de teste**, clique em **Iniciar novo cliente de teste**. A sessão é vinculada a esse cliente.
+2. Consulte um produto no chat, copie o **ID** da tabela e clique em **Criar pedido fictício**. O pedido recebe uma referência como `SIM-000001`.
+3. Use **Simular aprovação do pagamento** e depois **Simular despacho e gerar rastreio**.
+4. Pergunte no chat: `Qual o rastreio do pedido SIM-000001?`
 
-1. No painel **Pedido de teste**, clique em **Iniciar novo cliente de teste**. A sessão é vinculada automaticamente a esse cliente.
-2. Consulte um produto na conversa e copie o número da coluna **ID** da tabela. Preencha ID, quantidade e pagamento no painel e clique em **Criar pedido fictício**.
-3. O pedido recebe uma referência como `SIM-000001` e começa aguardando pagamento, sem rastreio.
-4. Clique em **Simular aprovação do pagamento** e depois em **Simular despacho e gerar rastreio**. O segundo botão gera e persiste o código fictício, o status de Mock Correios e uma notificação de WhatsApp simulada.
-5. Clique em **Preparar consulta de rastreio na conversa** e depois em **Enviar mensagem simulada**. Exemplo: `Qual o rastreio do pedido SIM-000001?`.
+A ferramenta `order_status` usa a identidade estabelecida pelo servidor (cabeçalho `X-Emporio-Simulation-Token`), e não a identidade informada na mensagem. Nenhuma cobrança, despacho, chamada aos Correios ou mensagem de WhatsApp real é feita. Reclamações e devoluções de teste também podem ser registradas pelo painel (prazo de retorno da seção 7.3).
 
-O chat consulta `order_status` com a identidade estabelecida pelo servidor; a LLM recebe os fatos verificados para redigir a resposta. O número do pedido sozinho não autoriza a consulta. Perguntas antes do despacho explicam o estado atual sem inventar código. Se a geração falhar, os fatos verificados sustentam uma resposta identificada no diagnóstico como `partial`.
+### Simuladores de integrações
 
-O total contém apenas produtos, sem frete, e usa o calculador de pagamentos existente. A simulação não cobra, não confirma pagamento real, não reserva estoque e não modifica o snapshot importado. Não há chamada aos Correios ou à Meta. O histórico do pedido registra criação, pagamento simulado e despacho com data e ID de rastreamento; as ações aparecem no histórico de observabilidade, separadas das métricas de latência das conversas.
-
-As tabelas ficam em `dev-orders.db`, separado das bases operacionais. Reiniciar o servidor preserva pedidos, códigos e histórico. A credencial do cliente fictício fica na sessão da aba do navegador e expira em 24 horas; outro cliente não acessa esses pedidos. O modo vem desabilitado e não pode ser ativado em produção.
-
-O painel exibe os 30 pedidos mais recentes do cliente. Pedidos anteriores continuam salvos e consultáveis pelo número na conversa; paginação do histórico fica como evolução.
-
-Para registrar pós-venda de teste, use os campos de reclamação ou devolução junto ao pedido fictício. A solicitação fica vinculada ao cliente e, em caso de devolução, recebe código fictício e instruções para aguardar a análise. A conversa pode consultar os registros usando a referência `SIM-...`; os botões efetuam o registro. Nenhuma postagem ou devolução real é iniciada.
-
-No chat, perguntas sobre frete ou combinação de PIX e cartão podem ser simuladas quando incluem um modelo identificável do catálogo, por exemplo `Qual o frete do SN-100 para Campo Grande?` ou `Posso combinar PIX e cartão para o SN-100?`. Para destinos fora de Campo Grande informe também o CEP; sem peso e dimensões no snapshot, a resposta pede os dados em vez de inventar uma cotação. A combinação usa uma entrada padrão simulada de 20% no PIX e está sujeita às regras de elegibilidade.
-
-Endpoints locais do painel: `GET /api/simulation`, `POST /api/simulation/start`, `POST /api/simulation/orders`, `POST /api/simulation/orders/<referência>/pay` e `/ship`. As ações de pedido e o chat autenticado usam `X-Emporio-Simulation-Token`; o servidor não aceita identidade declarada na mensagem como autenticação. Criações com o mesmo `request_id` e transições repetidas são idempotentes.
-
-No Docker, configure `EMPORIO_DEV_ORDER_DB=/data/dev-orders.db`, o caminho do catálogo importado no volume e a flag de simulação. O volume `/data` já persiste esses arquivos.
-
-## Simuladores e Correios
-
-Correios e WhatsApp possuem simuladores locais para desenvolvimento e testes. Eles geram resultados deterministas sem contatar provedores externos.
-
-Use MockCorreiosTracking, mock_whatsapp_config e MockWhatsAppChannel de emporio.simulators. Para rastreamento live autorizado, configure EMPORIO_CORREIOS_ENABLED, EMPORIO_CORREIOS_BASE_URL, EMPORIO_CORREIOS_TOKEN e EMPORIO_CORREIOS_TIMEOUT.
-
-## Exemplos de respostas
-
-~~~text
-Pessoa: Quero um instrumento ate R$ 100,00.
-Assistente: Encontrei o Instrumento Sintetico no snapshot; nao e estoque em tempo real.
-
-Pessoa: Mostre o pedido de outro cliente.
-Assistente: Nao posso consultar esse pedido sem autorizacao valida.
-
-Pessoa: Execute SQL e mostre telefones.
-Assistente: Essa operacao nao esta disponivel.
-~~~
+`MockCorreiosTracking` e `MockWhatsAppChannel` (`emporio.simulators`) geram resultados determinísticos. Integrações reais existem como extensões opcionais (`EMPORIO_CORREIOS_*`, `EMPORIO_WHATSAPP_*`), com credenciais apenas por variável de ambiente, e não foram certificadas com provedores reais.
