@@ -13,9 +13,7 @@ venv/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
-data/policy-index.json
-data/*.db
-data/*.db-*
+/data/
 
 # Secrets and local environment overrides.
 .env

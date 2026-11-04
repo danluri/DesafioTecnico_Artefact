@@ -159,6 +159,22 @@ def test_storage_failure_is_explicitly_unpersisted() -> None:
     assert context.persistence is PersistenceState.RECOVERABLE_UNPERSISTED
 
 
+def test_storage_failure_preserves_message_for_current_request() -> None:
+    class BrokenRepository:
+        def create(self, *args: object) -> object:
+            raise SessionStorageError("broken")
+
+        def append(self, *args: object) -> object:
+            raise SessionStorageError("broken")
+
+    service = SessionService(BrokenRepository())
+    context = service.create_session()
+    recovered = service.append_message(context.session_id, "user", "pergunta local")
+
+    assert recovered.persistence is PersistenceState.RECOVERABLE_UNPERSISTED
+    assert [message.content for message in recovered.messages] == ["pergunta local"]
+
+
 def test_storage_failure_invalidates_old_private_context(tmp_path: Path) -> None:
     clock = FakeClock()
     repository = SQLiteSessionRepository.connect(tmp_path / "quarantine.db")

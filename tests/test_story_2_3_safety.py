@@ -189,5 +189,6 @@ def test_local_llama_preserves_tool_metadata_and_parses_json_arguments(
         )
     )
     assert captured["payload"]["messages"][0]["tool_calls"][0]["id"] == "x-7"
+    assert captured["payload"]["messages"][0]["tool_calls"][0]["function"]["arguments"] == {"value": "ok"}
     assert captured["payload"]["messages"][1]["tool_call_id"] == "x-7"
     assert response.tool_calls[0].arguments == {"value": "ok"}

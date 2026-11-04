@@ -71,10 +71,22 @@ class SessionService:
         try:
             return self._repository.append(parsed, principal, message, now)
         except SessionExpiredError:
-            return self.create_session(principal)
+            fresh = self.create_session(principal)
+            return SessionContext(
+                fresh.session_id,
+                (message,),
+                fresh.expires_at,
+                PersistenceState.RECOVERABLE_UNPERSISTED,
+            )
         except SessionStorageError:
             self._invalidate(parsed)
-            return self.create_session(principal)
+            fresh = self.create_session(principal)
+            return SessionContext(
+                fresh.session_id,
+                (message,),
+                fresh.expires_at,
+                PersistenceState.RECOVERABLE_UNPERSISTED,
+            )
         except SessionAccessError:
             raise
 

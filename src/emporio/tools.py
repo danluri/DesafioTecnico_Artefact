@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from .order import AuthorizedPrincipal
+from .catalog import CatalogSearchResult, CatalogQueryError
 
 
 class ToolError(Exception):
@@ -84,6 +85,8 @@ class ToolRegistry:
 
     def __init__(self, services: Mapping[str, Any] | None = None) -> None:
         self._tools: dict[str, ToolSpec] = {}
+        order = (services or {}).get('order')
+        self.order_simulator = order if getattr(order, 'simulated', False) else None
         if services:
             self._register_services(services)
 
@@ -121,6 +124,13 @@ class ToolRegistry:
             )
         except ToolError:
             raise
+        except CatalogQueryError as exc:
+            import logging
+            logging.getLogger("emporio.local_llama").warning(
+                "catalog_query_rejected tool=%s reason=%s fields=%s",
+                name, str(exc), sorted(arguments),
+            )
+            raise ToolExecutionError("catalog query failed validation") from exc
         except Exception as exc:
             raise ToolExecutionError("deterministic tool failed") from exc
         if value is None and spec.order_tool:
@@ -170,10 +180,21 @@ class ToolRegistry:
                     "search_catalog",
                     "Search the product snapshot",
                     {
-                        "name": {"type": "string", "maxLength": 120},
-                        "category": {"type": "string", "maxLength": 80},
-                        "maximum_budget": {"type": "string", "maxLength": 30},
-                        "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                        "name": {
+                            "type": "string",
+                            "maxLength": 120,
+                            "description": "Product name, for example violao",
+                        },
+                        "category": {
+                            "type": "string",
+                            "maxLength": 80,
+                            "description": "Product category",
+                        },
+                        "maximum_budget": {
+                            "type": "string",
+                            "maxLength": 30,
+                            "description": "Maximum price in BRL, for example 1000 or 1000,00. Do not use this as limit.",
+                        },
                     },
                     (),
                     catalog.search,
@@ -197,11 +218,44 @@ class ToolRegistry:
                         "product_id": {"type": "integer", "minimum": 1},
                         "pix": {"type": "boolean"},
                         "installments": {"type": "integer", "minimum": 1, "maximum": 12},
+                        "overview": {"type": "boolean", "description": "Return all eligible payment plans and the exact PIX quote"},
                     },
                     ("product_id",),
                     payment.calculate,
                 )
             )
+            def combinations(product_id: int) -> dict:
+                quote = payment.options(product_id)
+                try:
+                    options = payment.calculate_combinations(product_id)
+                except Exception as exc:
+                    from .catalog import PaymentCalculationError
+                    if not isinstance(exc, PaymentCalculationError):
+                        raise
+                    return {'product_name': quote['product_name'], 'eligible': False,
+                            'message': 'Combinação PIX e cartão indisponível para este produto.',
+                            'simulated': True}
+                return {'product_name': quote['product_name'], 'eligible': True,
+                        'options': options, 'simulated': True}
+
+            self.register(ToolSpec(
+                'calculate_combinations', 'Simulate PIX and card combinations for a verified product',
+                {'product_id': {'type': 'integer', 'minimum': 1}}, ('product_id',), combinations,
+            ))
+            from .shipping import ShippingService
+            def shipping(product_id: int, destination: str, cep: str = '') -> dict:
+                quote = payment.calculate(product_id)
+                result = ShippingService().analyze_product(
+                    quote.product, destination, order_total=quote.effective_price_brl, cep=cep)
+                return {'product_name': quote.product.name, 'analysis': result, 'simulated': True}
+
+            self.register(ToolSpec(
+                'analyze_shipping', 'Simulate shipping using verified product price and package data',
+                {'product_id': {'type': 'integer', 'minimum': 1},
+                 'destination': {'type': 'string', 'maxLength': 120},
+                 'cep': {'type': 'string', 'maxLength': 9}},
+                ('product_id', 'destination'), shipping,
+            ))
         if policy:
             self.register(
                 ToolSpec(
@@ -226,6 +280,20 @@ class ToolRegistry:
 
 
 def _safe_value(value: Any) -> Any:
+    if isinstance(value, CatalogSearchResult):
+        return {
+            "products": [
+                {
+                    "product_id": p.product_id, "name": p.name,
+                    "price_brl": str(p.price_brl), "stock_quantity": p.stock_quantity,
+                    "category_name": p.category_name,
+                }
+                for p in value.products
+            ],
+            "total": value.total,
+            "criteria": _safe_value(value.criteria),
+            "snapshot": _safe_value(value.snapshot),
+        }
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Mapping):

@@ -88,6 +88,17 @@ def test_remote_shipping_uses_stored_product_package_data(tmp_path):
     assert result.complete and result.options[0].price_brl == Decimal("44.90")
 
 
+def test_shipping_tool_uses_catalog_package_and_marks_estimates_simulated(tmp_path):
+    repo = catalog(tmp_path)
+    tools = ToolRegistry({'payment': PaymentService(repo)})
+    result = tools.execute('analyze_shipping', {
+        'product_id': 1, 'destination': 'São Paulo', 'cep': '01001-000',
+    }).value
+    assert result['simulated'] is True
+    assert result['analysis']['options'][0]['price_brl'] == '44.90'
+    assert all(option['simulated'] for option in result['analysis']['options'])
+
+
 def test_shipping_requires_data_and_quotes_oversized_package():
     incomplete = ShippingService().analyze("São Paulo", order_total=Decimal("800"), cep="01001000")
     assert not incomplete.complete and not incomplete.options

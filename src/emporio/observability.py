@@ -30,6 +30,8 @@ class Observability:
 
     def emit(self, event: SafetyEvent) -> None:
         self.events.append(event)
+        if len(self.events) > 2000:
+            del self.events[:-2000]
         if self._sink:
             self._sink(event)
 

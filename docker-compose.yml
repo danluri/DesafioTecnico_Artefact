@@ -5,6 +5,9 @@ services:
       EMPORIO_ENV: development
       EMPORIO_PRINCIPAL_HMAC_SECRET: development-only-change-me
       EMPORIO_DB_PATH: /data/emporio.db
+      EMPORIO_TRACE_DB: /data/observability.db
+      EMPORIO_RUNTIME_LOG: /data/emporio-runtime.log
+      EMPORIO_TRACE_RETENTION_DAYS: "7"
       EMPORIO_LLM_PROVIDER: fake
       EMPORIO_MARKET_ENABLED: "false"
       EMPORIO_MCP_ENABLED: "false"
@@ -13,6 +16,10 @@ services:
       # Development console is disabled unless both this flag and --dev-console are used.
       # EMPORIO_DEV_CONSOLE_ENABLED: "true"
       # EMPORIO_DEV_CONSOLE_PORT: "8080"
+      # Optional fictitious orders; catalog.db must already contain an imported snapshot.
+      # EMPORIO_CATALOG_DB_PATH: /data/catalog.db
+      # EMPORIO_DEV_ORDER_SIMULATION_ENABLED: "true"
+      # EMPORIO_DEV_ORDER_DB: /data/dev-orders.db
       # Optional local semantic policy retrieval; lexical retrieval remains the default.
       # EMPORIO_POLICY_SEMANTIC_ENABLED: "true"
       # EMPORIO_POLICY_EMBEDDING_BASE_URL: http://host.docker.internal:11434

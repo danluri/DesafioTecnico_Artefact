@@ -9,6 +9,9 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
+
+from .sqlite_lock import serialized
 
 from .config import principal_binding_secret
 from .order import AuthorizedPrincipal
@@ -34,6 +37,7 @@ class SQLiteSessionRepository:
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._connection = connection
+        self._lock = RLock()
         self._limits = limits or SessionLimits()
         self._principal_secret = principal_secret or principal_binding_secret()
         self._clock = clock or (lambda: datetime.now(timezone.utc))
@@ -55,7 +59,7 @@ class SQLiteSessionRepository:
         try:
             database.parent.mkdir(parents=True, exist_ok=True)
             return cls(
-                sqlite3.connect(str(database), timeout=5.0),
+                sqlite3.connect(str(database), timeout=5.0, check_same_thread=False),
                 limits,
                 principal_secret=principal_secret,
                 clock=clock,
@@ -67,6 +71,7 @@ class SQLiteSessionRepository:
         """Allow the application service's deterministic clock to govern writes."""
         self._clock = clock
 
+    @serialized
     def purge_expired(self, now: datetime) -> None:
         if now.tzinfo is None:
             raise SessionStorageError("purge time must include a timezone")
@@ -89,6 +94,7 @@ class SQLiteSessionRepository:
         except sqlite3.Error as exc:
             raise SessionStorageError("session storage is unavailable") from exc
 
+    @serialized
     def invalidate(self, session_id: SessionId) -> None:
         """Quarantine a session whose contents could not be safely recovered."""
         try:
@@ -143,6 +149,7 @@ class SQLiteSessionRepository:
             raise SessionStorageError(f"session storage contains a timezone-less {label}")
         return parsed
 
+    @serialized
     def create(
         self, session_id: SessionId, principal: AuthorizedPrincipal | None, expires_at: datetime
     ) -> SessionContext:
@@ -165,6 +172,7 @@ class SQLiteSessionRepository:
             raise SessionStorageError("session could not be created") from exc
         return SessionContext(session_id, (), expires_at)
 
+    @serialized
     def read(
         self, session_id: SessionId, principal: AuthorizedPrincipal | None, now: datetime
     ) -> SessionContext:
@@ -194,11 +202,13 @@ class SQLiteSessionRepository:
         except (sqlite3.Error, TypeError, SessionValidationError) as exc:
             raise SessionStorageError("session storage contains unusable data") from exc
 
+    @serialized
     def get(
         self, session_id: SessionId, principal: AuthorizedPrincipal | None, now: datetime
     ) -> SessionContext:
         return self.read(session_id, principal, now)
 
+    @serialized
     def expire(
         self, session_id: SessionId, principal: AuthorizedPrincipal | None, now: datetime
     ) -> None:
@@ -213,6 +223,7 @@ class SQLiteSessionRepository:
         except sqlite3.Error as exc:
             raise SessionStorageError("session storage is unavailable") from exc
 
+    @serialized
     def append(
         self,
         session_id: SessionId,

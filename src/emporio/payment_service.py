@@ -32,12 +32,36 @@ class PaymentService:
         *,
         pix: bool = False,
         installments: int | None = None,
-    ) -> PaymentResult:
+        overview: bool = False,
+    ) -> PaymentResult | dict:
+        if overview:
+            return self.options(product_id)
         product = self._repository.find_by_id(product_id)
         if product is None:
             raise PaymentCalculationError("product was not found in the snapshot")
         promotions = self._repository.active_promotions(product_id)
         return self.calculate_for_product(product, promotions, pix=pix, installments=installments)
+
+    def options(self, product_id: int) -> dict:
+        """Quote all valid methods/plans from one consistent product snapshot."""
+        base = self.calculate(product_id)
+        promotions = (base.promotion,) if base.promotion else ()
+        pix = self.calculate_for_product(base.product, promotions, pix=True)
+        plans = []
+        for count in range(1, 13):
+            try:
+                plan = self.calculate_for_product(base.product, promotions, installments=count)
+                plans.append(plan.installments)
+            except PaymentCalculationError:
+                continue
+        return {
+            'product_id': product_id, 'product_name': base.product.name,
+            'price_brl': base.effective_price_brl, 'pix_price_brl': pix.pix_price_brl,
+            'pix_discount_applied': pix.pix_applied,
+            'promotion_active': base.promotion is not None,
+            'installments': tuple(plans), 'maximum_installments': max((p.count for p in plans), default=0),
+            'snapshot': base.snapshot,
+        }
 
     def calculate_combinations(
         self,
@@ -137,11 +161,12 @@ class PaymentService:
                     raise PaymentCalculationError(
                         "installments require a purchase of at least R$ 50,00"
                     )
-            elif installments <= 6 and base_for_options / installments < Decimal("80.00"):
-                raise PaymentCalculationError(
-                    "4 to 6 installments require at least R$ 80,00 per installment"
-                )
-            elif installments <= 12 and base_for_options / installments < Decimal("100.00"):
+            elif installments <= 6:
+                if base_for_options / installments < Decimal("80.00"):
+                    raise PaymentCalculationError(
+                        "4 to 6 installments require at least R$ 80,00 per installment"
+                    )
+            elif base_for_options / installments < Decimal("100.00"):
                 raise PaymentCalculationError(
                     "7 to 12 installments require at least R$ 100,00 per installment"
                 )

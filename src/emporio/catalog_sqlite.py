@@ -8,6 +8,10 @@ import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from threading import RLock
+
+from .sqlite_lock import serialized
+from .catalog_search import search_text
 from typing import Iterable
 
 from .catalog import (
@@ -330,14 +334,16 @@ class SQLiteCatalogRepository:
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection = connection
+        self._lock = RLock()
         self._connection.row_factory = sqlite3.Row
+        self._connection.create_function("catalog_search_text", 1, search_text, deterministic=True)
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._ensure_schema()
 
     @classmethod
     def connect(cls, path: str | Path) -> SQLiteCatalogRepository:
         try:
-            return cls(sqlite3.connect(str(path)))
+            return cls(sqlite3.connect(str(path), check_same_thread=False))
         except sqlite3.Error as exc:
             raise CatalogIngestionError("unable to open catalog database") from exc
 
@@ -392,6 +398,7 @@ class SQLiteCatalogRepository:
             self._connection.execute(f"ALTER TABLE products ADD COLUMN {column} TEXT")
         self._connection.commit()
 
+    @serialized
     def ingest(
         self,
         products_csv: Path,
@@ -477,6 +484,7 @@ class SQLiteCatalogRepository:
             raise CatalogIngestionError("snapshot ingestion failed") from exc
         return metadata
 
+    @serialized
     def ingest_orders(
         self,
         customers_csv: Path,
@@ -518,12 +526,14 @@ class SQLiteCatalogRepository:
             raise OrderIngestionError("order snapshot ingestion failed") from exc
         return metadata
 
+    @serialized
     def order_snapshot_metadata(self) -> SnapshotMetadata:
         row = self._connection.execute("SELECT data_as_of FROM order_metadata").fetchone()
         if row is None:
             return self._metadata()
         return SnapshotMetadata(datetime.fromisoformat(row[0]))
 
+    @serialized
     def find_owned_order(
         self, order_id: int, principal: AuthorizedPrincipal
     ) -> OrderStatusSnapshot | None:
@@ -551,6 +561,7 @@ class SQLiteCatalogRepository:
             snapshot=self.order_snapshot_metadata(),
         )
 
+    @serialized
     def find_owned_tracking_code(
         self, order_id: int, principal: AuthorizedPrincipal
     ) -> str | None:
@@ -594,6 +605,7 @@ class SQLiteCatalogRepository:
                                if row["package_height_cm"] else None),
         )
 
+    @serialized
     def search(self, criteria: SearchCriteria) -> tuple[tuple[Product, ...], int, SnapshotMetadata]:
         metadata = self._metadata()
         clauses: list[str] = []
@@ -602,11 +614,11 @@ class SQLiteCatalogRepository:
             clauses += ["p.status = ?", "p.stock_quantity > 0"]
             params += ["active"]
         if criteria.name:
-            clauses.append("LOWER(p.name) LIKE LOWER(?) ESCAPE '\\'")
-            params.append(_like_pattern(criteria.name))
+            clauses.append("catalog_search_text(p.name) LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(search_text(criteria.name)))
         if criteria.category:
-            clauses.append("LOWER(c.name) LIKE LOWER(?) ESCAPE '\\'")
-            params.append(_like_pattern(criteria.category))
+            clauses.append("catalog_search_text(c.name) LIKE ? ESCAPE '\\'")
+            params.append(_like_pattern(search_text(criteria.category)))
         if criteria.maximum_budget is not None:
             clauses.append("CAST(p.price_brl AS NUMERIC) <= CAST(? AS NUMERIC)")
             params.append(str(criteria.maximum_budget))
@@ -627,12 +639,14 @@ class SQLiteCatalogRepository:
         ).fetchall()
         return tuple(self._product(row) for row in rows), total, metadata
 
+    @serialized
     def find_by_id(self, product_id: int) -> Product | None:
         row = self._connection.execute(
             "SELECT * FROM products WHERE product_id = ?", (product_id,)
         ).fetchone()
         return self._product(row) if row else None
 
+    @serialized
     def find_by_name(self, name: str) -> tuple[Product, ...]:
         rows = self._connection.execute(
             "SELECT * FROM products WHERE LOWER(name) = LOWER(?) ORDER BY product_id",
@@ -640,6 +654,7 @@ class SQLiteCatalogRepository:
         ).fetchall()
         return tuple(self._product(row) for row in rows)
 
+    @serialized
     def active_promotions(self, product_id: int) -> tuple[Promotion, ...]:
         rows = self._connection.execute(
             "SELECT * FROM promotions WHERE product_id = ? AND is_active = 1 ORDER BY promotion_id",

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from dataclasses import replace
+import re
 
 from .catalog import (
     CatalogDetailResult,
@@ -12,6 +14,7 @@ from .catalog import (
     SearchCriteria,
 )
 from .catalog_repository import CatalogRepository
+from .catalog_search import search_filters
 
 
 class CatalogService:
@@ -28,12 +31,17 @@ class CatalogService:
         offset: int = 0,
         availability_only: bool = True,
     ) -> CatalogSearchResult:
+        original_name, original_category = name, category
+        name, category = search_filters(name, category)
         budget = None
-        if maximum_budget is not None:
+        if maximum_budget is not None and str(maximum_budget).strip():
             try:
                 raw_budget = str(maximum_budget).strip()
+                raw_budget = re.sub(r'^R\$\s*', '', raw_budget, flags=re.IGNORECASE)
                 if "," in raw_budget:
                     raw_budget = raw_budget.replace(".", "").replace(",", ".")
+                elif re.fullmatch(r'\d{1,3}(?:\.\d{3})+', raw_budget):
+                    raw_budget = raw_budget.replace('.', '')
                 budget = Decimal(raw_budget)
             except (InvalidOperation, ValueError) as exc:
                 raise CatalogQueryError("maximum_budget must be a valid amount") from exc
@@ -48,6 +56,10 @@ class CatalogService:
             availability_only=availability_only,
         )
         products, total, snapshot = self._repository.search(criteria)
+        if total == 0 and original_name and not original_category and name is None:
+            # Legacy snapshots may lack category labels but use the instrument as its name.
+            criteria = replace(criteria, name=original_name, category=None)
+            products, total, snapshot = self._repository.search(criteria)
         return CatalogSearchResult(products, total, criteria, snapshot)
 
     def detail(self, reference: str) -> CatalogDetailResult | tuple[Product, ...]:

@@ -20,3 +20,12 @@ def normalize_customer_text(value: str) -> str:
             break
         text = repaired
     return text
+
+
+def is_system_failure_text(value: str) -> bool:
+    return normalize_customer_text(value).casefold() in {
+        'não consegui consultar o assistente agora. tente novamente mais tarde.',
+        'não consegui obter essa informação agora.',
+        'não consegui preparar uma resposta segura.',
+        'não consegui concluir a resposta com segurança.',
+    }

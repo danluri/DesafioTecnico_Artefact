@@ -14,6 +14,7 @@ from .policy_runtime import runtime_llm_and_tools
 from .session import utc_now
 from .session_service import SessionService
 from .session_sqlite import SQLiteSessionRepository
+from .tracing import without_tracing
 
 
 def main() -> None:
@@ -30,7 +31,8 @@ def main() -> None:
     assistant = ConversationService(sessions, llm, tools)
     print(f"READY emporio storage db={database_path()}", flush=True)
     if args.check:
-        smoke = assistant.respond("runtime readiness")
+        with without_tracing():
+            smoke = assistant.respond("runtime readiness")
         print(
             f"READY emporio assistant provider={llm.provider} session={smoke.session_id} "
             f"persistence={smoke.persistence.value}",
@@ -41,7 +43,8 @@ def main() -> None:
         print(f"READY emporio dev-console provider={llm.provider}", flush=True)
         serve(DevConsoleApplication(assistant))
         return
-    smoke = assistant.respond("runtime readiness")
+    with without_tracing():
+        smoke = assistant.respond("runtime readiness")
     print(
         f"READY emporio assistant provider={llm.provider} session={smoke.session_id} "
         f"persistence={smoke.persistence.value}",
