@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from .catalog import (
+    EXPIRED_PROMOTION_GUIDANCE,
     AmbiguousPromotionError,
     InstallmentOption,
     PaymentCalculationError,
@@ -54,7 +55,7 @@ class PaymentService:
                 plans.append(plan.installments)
             except PaymentCalculationError:
                 continue
-        return {
+        quote = {
             'product_id': product_id, 'product_name': base.product.name,
             'price_brl': base.effective_price_brl, 'pix_price_brl': pix.pix_price_brl,
             'pix_discount_applied': pix.pix_applied,
@@ -62,6 +63,15 @@ class PaymentService:
             'installments': tuple(plans), 'maximum_installments': max((p.count for p in plans), default=0),
             'snapshot': base.snapshot,
         }
+        expired = self._repository.inactive_promotions(product_id)
+        if expired:
+            # Manual 7.3: an expired promotion is disclosed, never applied.
+            quote['expired_promotions'] = tuple(
+                {'description': p.description, 'discount_percent': p.discount_percent,
+                 'status': 'expired', 'customer_guidance': EXPIRED_PROMOTION_GUIDANCE}
+                for p in expired
+            )
+        return quote
 
     def calculate_combinations(
         self,

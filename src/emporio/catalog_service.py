@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
-from dataclasses import replace
 import re
+from dataclasses import replace
+from decimal import Decimal, InvalidOperation
 
 from .catalog import (
     CatalogDetailResult,
     CatalogQueryError,
     CatalogSearchResult,
     Product,
+    Promotion,
     SearchCriteria,
 )
 from .catalog_repository import CatalogRepository
 from .catalog_search import search_filters
+
+MAX_ALTERNATIVES = 3
 
 
 class CatalogService:
@@ -60,7 +63,18 @@ class CatalogService:
             # Legacy snapshots may lack category labels but use the instrument as its name.
             criteria = replace(criteria, name=original_name, category=None)
             products, total, snapshot = self._repository.search(criteria)
-        return CatalogSearchResult(products, total, criteria, snapshot)
+        alternatives: tuple[Product, ...] = ()
+        if total == 0 and criteria.name and criteria.availability_only:
+            # A named product that exists but cannot be sold must not look nonexistent
+            # (manual 7.3): return it flagged, with available alternatives.
+            unavailable = replace(criteria, availability_only=False)
+            products, total, snapshot = self._repository.search(unavailable)
+            if total:
+                criteria = unavailable
+                alternatives = self._alternatives(products)
+        return CatalogSearchResult(
+            products, total, criteria, snapshot, alternatives, self._expired_promotions(products)
+        )
 
     def detail(self, reference: str) -> CatalogDetailResult | tuple[Product, ...]:
         if not reference or not reference.strip():
@@ -68,8 +82,35 @@ class CatalogService:
         value = reference.strip()
         if value.isdigit():
             product = self._repository.find_by_id(int(value))
-            return CatalogDetailResult(product, product.snapshot) if product else ()
+            return self._detail(product) if product else ()
         matches = self._repository.find_by_name(value)
         if len(matches) == 1:
-            return CatalogDetailResult(matches[0], matches[0].snapshot)
+            return self._detail(matches[0])
         return matches
+
+    def _detail(self, product: Product) -> CatalogDetailResult:
+        alternatives = () if product.is_available else self._alternatives((product,))
+        return CatalogDetailResult(
+            product, product.snapshot, alternatives,
+            self._repository.inactive_promotions(product.product_id),
+        )
+
+    def _alternatives(self, unavailable: tuple[Product, ...]) -> tuple[Product, ...]:
+        """Available products in the same category, closest in price to the requested one."""
+        reference = unavailable[0] if unavailable else None
+        if reference is None or not reference.category_name:
+            return ()
+        criteria = SearchCriteria(category=reference.category_name, limit=100)
+        candidates, _total, _snapshot = self._repository.search(criteria)
+        excluded = {product.product_id for product in unavailable}
+        ranked = sorted(
+            (product for product in candidates if product.product_id not in excluded),
+            key=lambda product: (abs(product.price_brl - reference.price_brl), product.product_id),
+        )
+        return tuple(ranked[:MAX_ALTERNATIVES])
+
+    def _expired_promotions(
+        self, products: tuple[Product, ...]
+    ) -> dict[int, tuple[Promotion, ...]]:
+        found = {p.product_id: self._repository.inactive_promotions(p.product_id) for p in products}
+        return {product_id: promotions for product_id, promotions in found.items() if promotions}

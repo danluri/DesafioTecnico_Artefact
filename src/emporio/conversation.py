@@ -10,7 +10,7 @@ from contextvars import copy_context
 import logging
 import re
 from time import monotonic
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from .llm import LLMMessage, LLMPort
@@ -20,6 +20,7 @@ from .observability import Observability, SafetyEvent, elapsed_ms
 from .order import AuthorizedPrincipal
 from .session import PersistenceState, SessionAccessError, SessionId, SessionValidationError
 from .session_service import SessionService
+from .store_hours import NOTICE_MARKER
 from .text import normalize_customer_text, is_system_failure_text
 from .tools import (
     ToolAuthorizationError,
@@ -56,10 +57,13 @@ class ConversationService:
         max_tool_calls=8,
         tool_timeout=3.0,
         observability: Observability | None = None,
+        hours_notice: Callable[[], str | None] | None = None,
     ) -> None:
         if min(max_rounds, max_tool_calls) < 1 or tool_timeout <= 0:
             raise ValueError("conversation budgets must be positive")
         self.sessions, self.llm, self.tools = sessions, llm, tools
+        # Injected so tests stay clock-independent; the runtime passes store_hours.current_notice.
+        self.hours_notice = hours_notice
         self.max_rounds, self.max_tool_calls, self.tool_timeout = (
             max_rounds,
             max_tool_calls,
@@ -169,6 +173,8 @@ class ConversationService:
                 outcome = 'answer_failure' if failed_answer else "partial" if partial or fallback else "success"
                 if failed_answer:
                     event('response_validation', status='failure', rule='model_returned_system_failure')
+                else:
+                    result = self._with_hours_notice(result, context)
                 self._event(correlation_id, session_hash, None, outcome, None)
                 context = self._persist(context, result, principal)
                 return ConversationOutcome(
@@ -289,6 +295,21 @@ class ConversationService:
         )
 
     handle = respond
+
+    def _with_hours_notice(self, result: str, context) -> str:
+        """Manual 7.1: outside business hours, tell the customer when the team returns (once)."""
+        if self.hours_notice is None:
+            return result
+        notice = self.hours_notice()
+        if not notice:
+            return result
+        already_told = any(
+            m.role.value == "assistant" and NOTICE_MARKER in m.content for m in context.messages
+        )
+        if already_told:
+            return result
+        event('hours_notice', status='appended')
+        return f"{result}\n\n{notice}"
 
     def _execute(self, name: str, arguments: Any, principal: AuthorizedPrincipal | None):
         executor = ThreadPoolExecutor(max_workers=1)

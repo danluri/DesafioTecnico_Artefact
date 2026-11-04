@@ -14,6 +14,7 @@ from .policy_runtime import runtime_llm_and_tools
 from .session import utc_now
 from .session_service import SessionService
 from .session_sqlite import SQLiteSessionRepository
+from .store_hours import configured_hours_notice
 from .tracing import without_tracing
 
 
@@ -28,7 +29,7 @@ def main() -> None:
     repository.purge_expired(utc_now())
     sessions = SessionService(repository)
     llm, tools, _policy = runtime_llm_and_tools(LLMFactory.create())
-    assistant = ConversationService(sessions, llm, tools)
+    assistant = ConversationService(sessions, llm, tools, hours_notice=configured_hours_notice())
     print(f"READY emporio storage db={database_path()}", flush=True)
     if args.check:
         with without_tracing():

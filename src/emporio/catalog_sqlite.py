@@ -654,11 +654,18 @@ class SQLiteCatalogRepository:
         ).fetchall()
         return tuple(self._product(row) for row in rows)
 
-    @serialized
     def active_promotions(self, product_id: int) -> tuple[Promotion, ...]:
+        return self._promotions(product_id, active=True)
+
+    def inactive_promotions(self, product_id: int) -> tuple[Promotion, ...]:
+        return self._promotions(product_id, active=False)
+
+    @serialized
+    def _promotions(self, product_id: int, *, active: bool) -> tuple[Promotion, ...]:
         rows = self._connection.execute(
-            "SELECT * FROM promotions WHERE product_id = ? AND is_active = 1 ORDER BY promotion_id",
-            (product_id,),
+            "SELECT promotion_id, product_id, discount_percent, description, is_active "
+            "FROM promotions WHERE product_id = ? AND is_active = ? ORDER BY promotion_id",
+            (product_id, int(active)),
         ).fetchall()
         return tuple(
             Promotion(

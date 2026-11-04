@@ -8,7 +8,14 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from .order import AuthorizedPrincipal
-from .catalog import CatalogSearchResult, CatalogQueryError
+from .catalog import (
+    AVAILABILITY_GUIDANCE,
+    EXPIRED_PROMOTION_GUIDANCE,
+    CatalogDetailResult,
+    CatalogQueryError,
+    CatalogSearchResult,
+    Product,
+)
 
 
 class ToolError(Exception):
@@ -279,20 +286,55 @@ class ToolRegistry:
             )
 
 
+def _product_summary(product: Product) -> dict[str, Any]:
+    summary = {
+        "product_id": product.product_id, "name": product.name,
+        "price_brl": str(product.price_brl), "stock_quantity": product.stock_quantity,
+        "category_name": product.category_name,
+    }
+    if not product.is_available:
+        summary["availability"] = product.availability
+        summary["customer_guidance"] = AVAILABILITY_GUIDANCE[product.availability]
+    return summary
+
+
+def _expired_promotions(promotions: Any) -> list[dict[str, Any]]:
+    return [
+        {"description": p.description, "discount_percent": str(p.discount_percent),
+         "status": "expired", "customer_guidance": EXPIRED_PROMOTION_GUIDANCE}
+        for p in promotions
+    ]
+
+
+def _policy_extras(alternatives: Any, expired: Any) -> dict[str, Any]:
+    extras: dict[str, Any] = {}
+    if alternatives:
+        extras["available_alternatives"] = [_product_summary(p) for p in alternatives]
+    if expired:
+        extras["expired_promotions"] = expired
+    return extras
+
+
 def _safe_value(value: Any) -> Any:
     if isinstance(value, CatalogSearchResult):
+        expired = {str(pid): _expired_promotions(promos)
+                   for pid, promos in value.expired_promotions.items()}
         return {
-            "products": [
-                {
-                    "product_id": p.product_id, "name": p.name,
-                    "price_brl": str(p.price_brl), "stock_quantity": p.stock_quantity,
-                    "category_name": p.category_name,
-                }
-                for p in value.products
-            ],
+            "products": [_product_summary(p) for p in value.products],
             "total": value.total,
             "criteria": _safe_value(value.criteria),
             "snapshot": _safe_value(value.snapshot),
+            **_policy_extras(value.alternatives, expired),
+        }
+    if isinstance(value, CatalogDetailResult):
+        product = _safe_value(value.product)
+        if not value.product.is_available:
+            product["availability"] = value.product.availability
+            product["customer_guidance"] = AVAILABILITY_GUIDANCE[value.product.availability]
+        return {
+            "product": product,
+            "snapshot": _safe_value(value.snapshot),
+            **_policy_extras(value.alternatives, _expired_promotions(value.expired_promotions)),
         }
     if value is None or isinstance(value, (str, int, float, bool)):
         return value

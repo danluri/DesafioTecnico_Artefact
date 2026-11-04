@@ -19,3 +19,6 @@ class CatalogRepository(Protocol):
 
     def active_promotions(self, product_id: int) -> tuple[Promotion, ...]:
         """Return active snapshot promotions for a product in promotion-ID order."""
+
+    def inactive_promotions(self, product_id: int) -> tuple[Promotion, ...]:
+        """Return expired (inactive) snapshot promotions for a product in promotion-ID order."""

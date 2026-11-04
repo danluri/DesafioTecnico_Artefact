@@ -17,6 +17,7 @@ from .llm import LLMFactory
 from .policy_runtime import runtime_llm_and_tools
 from .session_service import SessionService
 from .session_sqlite import SQLiteSessionRepository
+from .store_hours import configured_hours_notice
 from .simulators import MockWhatsAppChannel, mock_whatsapp_config
 from .whatsapp import WhatsAppWebhookAdapter, WhatsAppVerificationError
 from .tracing import TraceStore, action_trace
@@ -521,7 +522,9 @@ def create_default_application() -> DevConsoleApplication:
     repository = SQLiteSessionRepository.connect(database_path())
     llm, tools, _policy = runtime_llm_and_tools(LLMFactory.create())
     return DevConsoleApplication(
-        ConversationService(SessionService(repository), llm, tools)
+        ConversationService(
+            SessionService(repository), llm, tools, hours_notice=configured_hours_notice()
+        )
     )
 
 

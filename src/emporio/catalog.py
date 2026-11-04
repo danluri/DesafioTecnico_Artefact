@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Mapping
@@ -70,6 +70,38 @@ class Product:
     @property
     def is_available(self) -> bool:
         return self.status == "active" and self.stock_quantity > 0
+
+    @property
+    def availability(self) -> str:
+        """Customer-facing availability code used by the policy guidance below."""
+        if self.status == "discontinued":
+            return "discontinued"
+        if self.status == "coming_soon":
+            return "coming_soon"
+        return "available" if self.stock_quantity > 0 else "out_of_stock"
+
+
+# Manual de políticas, seção 7.3 (Situações Especiais). Sent with tool results so the
+# model applies the rule; facts (stock, status, alternatives) come from the snapshot.
+AVAILABILITY_GUIDANCE = {
+    "out_of_stock": (
+        "Produto temporariamente indisponível (sem estoque no sistema). Informe isso e "
+        "sugira as alternativas disponíveis listadas. Nunca confirme disponibilidade."
+    ),
+    "discontinued": (
+        "Produto descontinuado: não faz mais parte do catálogo. Informe isso e ofereça "
+        "os modelos equivalentes listados."
+    ),
+    "coming_soon": (
+        "Produto ainda não lançado (em breve): não está disponível para compra. "
+        "Ofereça as alternativas disponíveis listadas."
+    ),
+}
+
+EXPIRED_PROMOTION_GUIDANCE = (
+    "Promoção vencida: não está mais ativa no sistema. Se o cliente perguntar, informe "
+    "com transparência e apresente o preço atual. Nunca prometa esse desconto."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,9 +179,15 @@ class CatalogSearchResult:
     total: int
     criteria: SearchCriteria
     snapshot: SnapshotMetadata
+    # Available products suggested when the matched products cannot be sold.
+    alternatives: tuple[Product, ...] = ()
+    # Inactive promotions by product ID, so the agent never offers an expired discount.
+    expired_promotions: Mapping[int, tuple[Promotion, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class CatalogDetailResult:
     product: Product
     snapshot: SnapshotMetadata
+    alternatives: tuple[Product, ...] = ()
+    expired_promotions: tuple[Promotion, ...] = ()
