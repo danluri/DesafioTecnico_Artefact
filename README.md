@@ -194,6 +194,14 @@ O manual tem ambiguidades e divergências. As decisões adotadas:
 
 As conversas registradas estão em [`docs/exemplos-atendimento.md`](docs/exemplos-atendimento.md).
 
+Para gravar de novo, com o console rodando (seção [Como rodar](#como-rodar), passo 4), execute em outro terminal, na raiz do repositório:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\gravar-exemplos.ps1 -Saida exemplos-bruto.md
+```
+
+O script [`scripts/gravar-exemplos.ps1`](scripts/gravar-exemplos.ps1) envia cinco conversas de várias mensagens pela API do console, mantendo a mesma sessão em cada conversa. Ele grava a transcrição com modelo, resultado, chamadas de ferramenta, tempo e `trace_id` de cada resposta.
+
 ---
 
 ## Limitações conhecidas e próximos passos
