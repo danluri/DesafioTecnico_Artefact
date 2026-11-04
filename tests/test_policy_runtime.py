@@ -1,4 +1,4 @@
-from emporio.llm import FakeLLM, LLMMessage, MessageRole
+from emporio.llm import FakeLLM, LLMCapabilities, LLMMessage, MessageRole
 from emporio.policy_source import TextPolicyRetriever
 from emporio.policy_runtime import PolicyGroundedLLM, runtime_llm_and_tools
 from emporio.service import PolicyService
@@ -34,9 +34,10 @@ def test_runtime_registers_policy_tool(monkeypatch) -> None:
     assert "answer_policy" in tools.names()
 
 
-def test_local_model_does_not_receive_tools_by_default(monkeypatch) -> None:
+def test_provider_without_tool_calling_capability_does_not_receive_tools(monkeypatch) -> None:
     class LocalFake(FakeLLM):
         provider = "local-llama"
+        capabilities = LLMCapabilities(tool_calling=False)
 
         def __init__(self):
             super().__init__([FakeLLM.response("resposta")])

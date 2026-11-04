@@ -10,8 +10,27 @@ from time import monotonic
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .llm import LLMError, LLMMessage, LLMPort, LLMResponse, MessageRole, ToolCall
+from .llm import (
+    LLMCapabilities,
+    LLMError,
+    LLMMessage,
+    LLMPort,
+    LLMResponse,
+    MessageRole,
+    ToolCall,
+)
 from .tracing import runtime_logger, event, diagnostic
+
+# Models verified to follow Ollama tool calling reliably; others need explicit opt-in.
+TOOL_CALLING_MODEL_PREFIXES = ("llama3.1",)
+
+
+def local_tool_calling_supported(model: str) -> bool:
+    """Tool calling is on for known-capable models or when explicitly enabled."""
+    enabled = os.getenv("EMPORIO_LLAMA_ENABLE_TOOLS", "false").strip().lower()
+    if enabled in {"1", "true", "yes", "on"}:
+        return True
+    return model.strip().lower().startswith(TOOL_CALLING_MODEL_PREFIXES)
 
 
 class LocalLlamaUnavailable(LLMError):
@@ -38,6 +57,9 @@ class LocalLlamaLLM(LLMPort):
         self.model = model or os.getenv("EMPORIO_LLAMA_MODEL", "llama3.1:latest")
         self.timeout = float(timeout or os.getenv("EMPORIO_LLAMA_TIMEOUT", "180"))
         self.last_error = ""
+        self.capabilities = LLMCapabilities(
+            tool_calling=local_tool_calling_supported(self.model)
+        )
         if self.timeout <= 0:
             raise ValueError("EMPORIO_LLAMA_TIMEOUT must be positive")
 

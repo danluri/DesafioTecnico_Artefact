@@ -105,10 +105,7 @@ class PolicyGroundedLLM(LLMPort):
             provider_tools = ()
         if 'payment' in policy_topics(query) and operational_query(query):
             provider_tools = _payment_tools(provider_tools, messages)
-        if (
-            self.provider == "local-llama"
-            and not (_local_tools_enabled() or _model_supports_tools(self.model))
-        ):
+        if not self.capabilities.tool_calling:
             provider_tools = ()
         provider_messages = _bounded_messages(messages, resolved_reference or standalone_policy(query) or has_model_reference(customer_query))
         event('routing', topics=list(policy_topics(query)), policy_required=_is_policy_query(query),
@@ -342,16 +339,6 @@ def _validate_delivery_response(
     return LLMResponse(
         LLMMessage(MessageRole.ASSISTANT, corrected), response.finish_reason, response.usage
     )
-
-
-def _local_tools_enabled() -> bool:
-    return os.getenv("EMPORIO_LLAMA_ENABLE_TOOLS", "false").strip().lower() in {
-        "1", "true", "yes", "on"
-    }
-
-
-def _model_supports_tools(model: str) -> bool:
-    return model.strip().lower().startswith("llama3.1")
 
 
 def _tools_for_query(

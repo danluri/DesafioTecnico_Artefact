@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from .text import normalize_customer_text
 
@@ -126,20 +126,55 @@ class FakeLLM(LLMPort):
         return self._responses.pop(0)
 
 
+ProviderBuilder = Callable[..., LLMPort]
+
+
+def _build_fake(**kwargs: Any) -> LLMPort:
+    return FakeLLM(kwargs.get("responses"), scenario=kwargs.get("scenario", ""))
+
+
+def _build_local_llama(**kwargs: Any) -> LLMPort:
+    # Lazy import keeps the offline/fake path free of the HTTP adapter.
+    from .llm_local import LocalLlamaLLM
+
+    return LocalLlamaLLM(
+        base_url=kwargs.get("base_url"),
+        model=kwargs.get("model"),
+        timeout=kwargs.get("timeout"),
+    )
+
+
 class LLMFactory:
-    """Create only explicitly supported providers."""
+    """Registry-based factory: only explicitly registered providers can be created.
+
+    Adding a provider means implementing ``LLMPort`` and calling ``register`` once;
+    ``create`` and its callers do not change.
+    """
+
+    _builders: dict[str, ProviderBuilder] = {
+        "fake": _build_fake,
+        "local-llama": _build_local_llama,
+    }
+
+    @classmethod
+    def register(cls, name: str, builder: ProviderBuilder) -> None:
+        key = name.strip().lower()
+        if not key:
+            raise LLMConfigurationError("provider name must not be empty")
+        if key in cls._builders:
+            raise LLMConfigurationError(f"provider already registered: {key}")
+        cls._builders[key] = builder
+
+    @classmethod
+    def providers(cls) -> tuple[str, ...]:
+        return tuple(cls._builders)
 
     @classmethod
     def create(cls, provider: str | None = None, **kwargs: Any) -> LLMPort:
         selected = (provider or os.getenv("EMPORIO_LLM_PROVIDER", "fake")).strip().lower()
-        if selected == "fake":
-            return FakeLLM(kwargs.get("responses"), scenario=kwargs.get("scenario", ""))
-        if selected == "local-llama":
-            from .llm_local import LocalLlamaLLM
-
-            return LocalLlamaLLM(
-                base_url=kwargs.get("base_url"),
-                model=kwargs.get("model"),
-                timeout=kwargs.get("timeout"),
-            )
-        raise LLMConfigurationError("EMPORIO_LLM_PROVIDER must be fake or local-llama")
+        builder = cls._builders.get(selected)
+        if builder is None:
+            *others, last = cls.providers()
+            allowed = f"{', '.join(others)} or {last}" if others else last
+            raise LLMConfigurationError(f"EMPORIO_LLM_PROVIDER must be {allowed}")
+        return builder(**kwargs)
